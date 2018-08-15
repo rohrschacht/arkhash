@@ -1,0 +1,8 @@
+[package]
+name = "hashfilter"
+version = "0.1.0"
+authors = ["Tobias Petrich <tobias.petrich@campus.tu-berlin.de>"]
+
+[dependencies]
+regex = "1"
+chrono = "0.4"
