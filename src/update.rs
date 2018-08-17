@@ -1,4 +1,7 @@
+//! This module implements the update functionality
+
 extern crate chrono;
+extern crate threadpool;
 
 use std::fs::{self, OpenOptions};
 use std::path::{PathBuf};
@@ -8,34 +11,46 @@ use std::thread;
 
 use self::chrono::DateTime;
 
+use self::threadpool::ThreadPool;
 
+
+/// Updates the _algorithm_sum.txt files of some directories
+///
+/// # Arguments
+///
+/// * `opts` An Options object containing information about the program behavior
 pub fn update_directories(opts: super::util::Options) {
     match opts.subdir_mode {
-        false => update_hashsums(PathBuf::from("."), opts),
+        false => update_hashsums(PathBuf::from(&opts.folder), opts),
         true => {
+            let dir_entries = fs::read_dir(&opts.folder).unwrap();
+            let mut dirs_to_process = Vec::new();
+
+            for entry in dir_entries {
+                let entry = entry.unwrap();
+                let metadata = entry.metadata().unwrap();
+
+                if metadata.is_dir() {
+                    dirs_to_process.push(entry.path());
+                }
+            }
+
             match opts.num_threads {
                 0 => {
-                    let dir_entries = fs::read_dir(".").unwrap();
                     let mut thread_handles = Vec::new();
 
-                    for entry in dir_entries {
-                        let entry = entry.unwrap();
-                        let metadata = entry.metadata().unwrap();
-
-
-                        if metadata.is_dir() {
-                            if opts.loglevel_info() {
-                                let now: DateTime<chrono::Local> = chrono::Local::now();
-                                println!("[{}] Updating Directory {}", now, entry.path().to_str().unwrap());
-                            }
-
-                            let thread_path = entry.path().clone();
-                            let thread_opts = opts.clone();
-                            let handle = thread::spawn(|| {
-                                update_hashsums(thread_path, thread_opts);
-                            });
-                            thread_handles.push(handle);
+                    for entry in dirs_to_process {
+                        if opts.loglevel_info() {
+                            let now: DateTime<chrono::Local> = chrono::Local::now();
+                            println!("[{}] Updating Directory {}", now, entry.to_str().unwrap());
                         }
+
+                        let thread_path = entry.clone();
+                        let thread_opts = opts.clone();
+                        let handle = thread::spawn(|| {
+                            update_hashsums(thread_path, thread_opts);
+                        });
+                        thread_handles.push(handle);
                     }
 
                     for handle in thread_handles {
@@ -43,7 +58,22 @@ pub fn update_directories(opts: super::util::Options) {
                     }
                 },
                 _ => {
+                    let pool = ThreadPool::new(opts.num_threads);
 
+                    for entry in dirs_to_process {
+                        if opts.loglevel_info() {
+                            let now: DateTime<chrono::Local> = chrono::Local::now();
+                            println!("[{}] Updating Directory {}", now, entry.to_str().unwrap());
+                        }
+
+                        let thread_path = entry.clone();
+                        let thread_opts = opts.clone();
+                        pool.execute(|| {
+                            update_hashsums(thread_path, thread_opts);
+                        });
+                    }
+
+                    pool.join();
                 }
             }
         }
@@ -84,19 +114,43 @@ fn update_hashsums(path: PathBuf, opts: super::util::Options) {
     }
 }
 
+/// Call _algorithm_sum with the path of a file to get the hashsum.
+///
+/// # Arguments
+///
+/// * `path` Path to the file to be hashed, relative to the workdir
+/// * `workdir` Path to the wanted working directory
+/// * `opts` A reference to an Options object containing information about the program behavior
+///
+/// # Returns
+///
+/// A String containing the output of the _algorithm_sum command.
 fn calculate_hash(path: String, workdir: &PathBuf, opts: &super::util::Options) -> String {
     let output = Command::new(format!("{}sum", opts.algorithm)).arg(path).current_dir(workdir).output().unwrap();
     String::from_utf8_lossy(&output.stdout).to_string()
 }
 
+/// An Object that returns Paths to all the files in all folders recursively (like find)
+///
+/// DirWalker implements Iterator and Read for this behavior
 struct DirWalker {
+    /// A Buffer for the currently known files
     current_files: Vec<PathBuf>,
+    /// A Buffer for the directories that have to be scanned recursively
     current_directories: Vec<PathBuf>,
+    /// A Buffer for the filepath that was only partially read
     unfinished_read: String,
+    /// Whether or not the first directory should be stripped from the filepath
     subdir_mode: bool
 }
 
 impl DirWalker {
+    /// Create a new DirWalker object
+    ///
+    /// # Arguments
+    ///
+    /// * `start_directory` Path to the directory that should be scanned
+    /// * `subdir_mode` Whether or not the first directory should be stripped from the filepath
     pub fn new(start_directory: &PathBuf, subdir_mode: bool) -> DirWalker {
         let dir_entries = fs::read_dir(start_directory).unwrap();
         let mut files: Vec<PathBuf> = Vec::new();

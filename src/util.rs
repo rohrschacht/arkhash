@@ -1,4 +1,4 @@
-//! This describes a set of utilities that will be used throughout the other modules
+//! This module describes a set of utilities that will be used throughout the other modules
 
 /// The mode the program will operate in
 #[derive(Debug, Clone)]
@@ -32,12 +32,17 @@ pub struct Options {
     /// The level of detail the program will be logging
     pub log_level: LogLevel,
     /// Maximum number of threads to spawn
-    pub num_threads: u32,
+    pub num_threads: usize,
     /// The folder to operate on
     pub folder: String
 }
 
 impl Options {
+    /// Creates a new instance of Options containing all settings given through the commandline
+    ///
+    /// # Arguments
+    ///
+    /// * `args` - A vec of Strings containing all commandline parameters
     pub fn new(args: Vec<String>) -> Options {
         let mut opts = Options {
             help: false,
@@ -50,12 +55,16 @@ impl Options {
             folder: ".".to_string()
         };
 
+        // prepare Strings for parsing
         let args = prepare_args(args);
 
         opts.program_name = args[0].clone();
 
+        // loop through every argument, except the name
         for i in 1..args.len() {
             let arg = &args[i];
+
+            // match options (Strings with leading -)
             if arg.starts_with("-") {
                 match arg.as_ref() {
                     "-a" | "--algo" | "--algorithm" => opts.algorithm = args[i + 1].clone().to_lowercase(),
@@ -77,6 +86,7 @@ impl Options {
                     _ => opts.help = true
                 }
             } else {
+                // if a String does not start with - and the String before it is none of the below, it is the folder to operate on
                 match args[i - 1].as_ref() {
                     "--loglevel" | "--log_level" | "--log-level" | "-a" | "--algo" | "--algorithm" | "-T" | "--threads" => {},
                     _ => opts.folder = arg.clone()
@@ -87,15 +97,28 @@ impl Options {
         opts
     }
 
+    /// Indicates that the program is in the debug loglevel
     pub fn loglevel_debug(&self) -> bool {
         self.log_level == LogLevel::Debug
     }
 
+    /// Indicates that the program is at least in the info loglevel
     pub fn loglevel_info(&self) -> bool {
         self.log_level == LogLevel::Debug || self.log_level == LogLevel::Info
     }
 }
 
+/// Prepares a vec of Strings for parsing options
+///
+/// A new vec gets returned that contains more Strings than the original, because two rules get applied:
+/// * If a String starts with a single -, but it has more than 2 characters, the parameters get split
+///   into single Strings with a leading -
+/// * If a String contains a =, the = will get cut and the prefix and suffix will be split into two Strings
+/// This is necessary for the match statement in Options::new to work correctly
+///
+/// # Arguments
+///
+/// * `args` A vec of Strings containing all commandline parameters
 fn prepare_args(args: Vec<String>) -> Vec<String> {
     let mut prepared_args = Vec::with_capacity(args.len());
 

@@ -3,6 +3,7 @@ pub mod filter;
 pub mod update;
 pub mod verify;
 
+
 fn main() {
     let opts = util::Options::new(std::env::args().collect());
 
@@ -36,7 +37,7 @@ fn main() {
             update::update_directories(opts);
         },
         util::Mode::Verify => {
-
+            verify::verify_directories(opts);
         }
     }
 }
