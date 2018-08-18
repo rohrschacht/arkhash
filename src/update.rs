@@ -86,13 +86,12 @@ fn update_hashsums(path: PathBuf, opts: super::util::Options) {
 
     let filter = super::filter::Filter::new(reader, path.to_str().unwrap(), &opts);
 
-    match filter {
-        Err(e) => panic!(e),
-        Ok(filter) => {
-            let mut filepath = path.clone();
-            filepath.push(format!("{}sum.txt", opts.algorithm));
-            let mut file = OpenOptions::new().create(true).append(true).open(filepath).unwrap();
+    if let Ok(filter) = filter {
+        let mut filepath = path.clone();
+        filepath.push(format!("{}sum.txt", opts.algorithm));
+        let mut file = OpenOptions::new().create(true).append(true).open(filepath);
 
+        if let Ok(mut file) = file {
             for line in filter {
                 let hashline = calculate_hash(line, &path, &opts);
 
@@ -152,27 +151,39 @@ impl DirWalker {
     /// * `start_directory` Path to the directory that should be scanned
     /// * `subdir_mode` Whether or not the first directory should be stripped from the filepath
     pub fn new(start_directory: &PathBuf, subdir_mode: bool) -> DirWalker {
-        let dir_entries = fs::read_dir(start_directory).unwrap();
-        let mut files: Vec<PathBuf> = Vec::new();
-        let mut dirs: Vec<PathBuf> = Vec::new();
-
-        for entry in dir_entries {
-            let entry = entry.unwrap();
-            let metadata = entry.metadata().unwrap();
-
-            if metadata.is_dir() {
-                dirs.push(entry.path());
-            }
-            if metadata.is_file() {
-                files.push(entry.path());
-            }
-        }
-
-        DirWalker{
-            current_files: files,
-            current_directories: dirs,
+        let mut dirwalker = DirWalker{
+            current_files: Vec::new(),
+            current_directories: Vec::new(),
             unfinished_read: String::new(),
             subdir_mode
+        };
+
+        dirwalker.populate_with_dir(&start_directory);
+
+        dirwalker
+    }
+
+    fn populate_with_dir(&mut self, directory: &PathBuf) {
+        let dir_entries = fs::read_dir(directory);
+
+        if let Ok(dir_entries) = dir_entries {
+            let mut files = Vec::new();
+            let mut dirs = Vec::new();
+
+            for entry in dir_entries {
+                let entry = entry.unwrap();
+                let metadata = entry.metadata().unwrap();
+
+                if metadata.is_dir() {
+                    dirs.push(entry.path());
+                }
+                if metadata.is_file() {
+                    files.push(entry.path());
+                }
+            }
+
+            self.current_directories.append(&mut dirs);
+            self.current_files.append(&mut files);
         }
     }
 }
@@ -199,24 +210,7 @@ impl Iterator for DirWalker {
         if !self.current_directories.is_empty() {
             let dirpath = self.current_directories.pop().unwrap();
 
-            let dir_entries = fs::read_dir(dirpath).unwrap();
-            let mut files: Vec<PathBuf> = Vec::new();
-            let mut dirs: Vec<PathBuf> = Vec::new();
-
-            for entry in dir_entries {
-                let entry = entry.unwrap();
-                let metadata = entry.metadata().unwrap();
-
-                if metadata.is_dir() {
-                    dirs.push(entry.path());
-                }
-                if metadata.is_file() {
-                    files.push(entry.path());
-                }
-            }
-
-            self.current_files.append(&mut files);
-            self.current_directories.append(&mut dirs);
+            self.populate_with_dir(&dirpath);
 
             return self.next();
         }

@@ -92,58 +92,66 @@ pub fn verify_directories(opts: super::util::Options) {
 }
 
 fn verify_directory(workdir: PathBuf, known_good_path: String, to_check_path: String, opts: super::util::Options) {
-    let mut child = Command::new(format!("{}sum", opts.algorithm)).arg("-c").arg("--quiet").arg(format!("{}sum.txt", opts.algorithm)).current_dir(&workdir).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().unwrap();
-    let mut output = Vec::new();
+    let child = Command::new(format!("{}sum", opts.algorithm)).arg("-c").arg("--quiet").arg(format!("{}sum.txt", opts.algorithm)).current_dir(&workdir).stdout(Stdio::piped()).stderr(Stdio::null()).spawn();
 
-    if opts.loglevel_info() {
-        let reader = BufReader::new(child.stdout.take().unwrap());
+    if let Ok(mut child) = child {
+        let mut output = Vec::new();
 
-        for line in reader.lines() {
-            match line {
-                Err(_) => continue,
-                Ok(line) => {
-                    let now: DateTime<chrono::Local> = chrono::Local::now();
-                    println!("[{}] {}: {}", now, workdir.to_str().unwrap(), line);
+        if opts.loglevel_info() {
+            let reader = BufReader::new(child.stdout.take().unwrap());
 
-                    output.push(line);
+            for line in reader.lines() {
+                match line {
+                    Err(_) => continue,
+                    Ok(line) => {
+                        let now: DateTime<chrono::Local> = chrono::Local::now();
+                        println!("[{}] {}: {}", now, workdir.to_str().unwrap(), line);
+
+                        output.push(line);
+                    }
                 }
             }
         }
-    }
 
-    let exit_status = child.wait().unwrap();
+        let exit_status = child.wait().unwrap();
 
-    if exit_status.success() {
-        let mut file = OpenOptions::new().create(true).append(true).open(known_good_path).unwrap();
-        if let Err(e) = writeln!(file, "{}", workdir.to_str().unwrap()) {
-            eprintln!("Error writing to file: {}", e);
-        }
-
-        if opts.loglevel_info() {
-            let now = chrono::Local::now();
-            println!("[{}] {}: checked: OK", now, workdir.to_str().unwrap());
-        }
-    } else {
-        let mut file = OpenOptions::new().create(true).append(true).open(to_check_path).unwrap();
-        if let Err(e) = writeln!(file, "{}", workdir.to_str().unwrap()) {
-            eprintln!("Error writing to file: {}", e);
-        }
-
-        if opts.loglevel_info() {
-            let now = chrono::Local::now();
-            println!("[{}] Directory {} checked: FAILED", now, workdir.to_str().unwrap());
-        }
-
-        let bad_hashlines_filepath = format!("to_check_{}.txt", &workdir.to_str().unwrap()[2..]);
-        if opts.loglevel_debug() {
-            println!("Filepath for Bad Files: {:?}", bad_hashlines_filepath);
-        }
-        let mut bad_hashlines_file = OpenOptions::new().create(true).append(true).open(bad_hashlines_filepath).unwrap();
-
-        for line in output {
-            if let Err(e) = writeln!(bad_hashlines_file, "{}", line) {
+        if exit_status.success() {
+            let mut file = OpenOptions::new().create(true).append(true).open(known_good_path).unwrap();
+            if let Err(e) = writeln!(file, "{}", workdir.to_str().unwrap()) {
                 eprintln!("Error writing to file: {}", e);
             }
+
+            if opts.loglevel_info() {
+                let now = chrono::Local::now();
+                println!("[{}] {}: checked: OK", now, workdir.to_str().unwrap());
+            }
+        } else {
+            let mut file = OpenOptions::new().create(true).append(true).open(to_check_path).unwrap();
+            if let Err(e) = writeln!(file, "{}", workdir.to_str().unwrap()) {
+                eprintln!("Error writing to file: {}", e);
+            }
+
+            if opts.loglevel_info() {
+                let now = chrono::Local::now();
+                println!("[{}] Directory {} checked: FAILED", now, workdir.to_str().unwrap());
+            }
+
+            let bad_hashlines_filepath = format!("to_check_{}.txt", &workdir.to_str().unwrap()[2..]);
+            if opts.loglevel_debug() {
+                println!("Filepath for Bad Files: {:?}", bad_hashlines_filepath);
+            }
+            let mut bad_hashlines_file = OpenOptions::new().create(true).append(true).open(bad_hashlines_filepath).unwrap();
+
+            for line in output {
+                if let Err(e) = writeln!(bad_hashlines_file, "{}", line) {
+                    eprintln!("Error writing to file: {}", e);
+                }
+            }
+        }
+    } else {
+        if opts.loglevel_info() {
+            let now = chrono::Local::now();
+            println!("[{}] Directory {}: Permission Denied", now, workdir.to_str().unwrap());
         }
     }
 }
