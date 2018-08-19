@@ -9,9 +9,22 @@ fn main() {
 
     if opts.help {
         const VERSION: &'static str = env!("CARGO_PKG_VERSION");
-        print!("{} Version {}\n\n\
-        "
-               , opts.program_name, VERSION);
+        print!("{} Version {}
+
+Usage:
+ {} [OPTION] [DIRECTORY]
+
+Arguments:
+ -a, --algo, --algorithm ALGORITHM      uses ALGORITHM to hash files (example: md5, default: sha1)
+ -s, --subdir, --subdirectories         operate on the subdirectories of DIRECTORY (only for update and verify mode)
+ --loglevel LEVEL                       controls the output of the program (quiet/info/debug)
+ --quiet                                sets the loglevel to quiet
+ -T, --threads THREADS                  spawn a maximum of THREADS worker threads (default: 0: no cap)
+ -h, --help                             show this help message
+ -u, --update                           switch to update mode
+ -v, --verify                           switch to verify mode
+"
+               , opts.program_name, VERSION, opts.program_name);
         return;
     }
 
