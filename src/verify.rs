@@ -1,3 +1,5 @@
+//! This module implements the verify mode
+
 extern crate chrono;
 extern crate threadpool;
 
@@ -12,6 +14,11 @@ use self::chrono::{DateTime, Datelike};
 use self::threadpool::ThreadPool;
 
 
+/// Verifies the integrity of some directories
+///
+/// # Arguments
+///
+/// * `opts` An Options object containing information about the program behavior
 pub fn verify_directories(opts: super::util::Options) {
     let now = chrono::Local::now();
     let known_good_path = format!("known_good_{}_{}.txt", now.month(), now.year());
@@ -91,24 +98,34 @@ pub fn verify_directories(opts: super::util::Options) {
     }
 }
 
+/// Verifies the integrity of a directory
+///
+/// # Arguments
+///
+/// * `workdir` Path to the directory that should be verified
+/// * `known_good_path` The file the workdir path gets appended to if the directory is verified to be good
+/// * `to_check_path` The file the workdir path gets appended to if the directory is not verified to be good
+/// * `opts` An Options object containing information about the program behavior
 fn verify_directory(workdir: PathBuf, known_good_path: String, to_check_path: String, opts: super::util::Options) {
-    let child = Command::new(format!("{}sum", opts.algorithm)).arg("-c").arg("--quiet").arg(format!("{}sum.txt", opts.algorithm)).current_dir(&workdir).stdout(Stdio::piped()).stderr(Stdio::null()).spawn();
+    let child = Command::new(format!("{}sum", opts.algorithm)).arg("-c").arg("--quiet").arg(format!("{}sum.txt", opts.algorithm))
+        .current_dir(&workdir).stdout(Stdio::piped()).stderr(Stdio::null()).spawn();
 
     if let Ok(mut child) = child {
+        // The _algorithm_sum command can be successfully executed in workdir
+
         let mut output = Vec::new();
+        let reader = BufReader::new(child.stdout.take().unwrap());
 
-        if opts.loglevel_info() {
-            let reader = BufReader::new(child.stdout.take().unwrap());
-
-            for line in reader.lines() {
-                match line {
-                    Err(_) => continue,
-                    Ok(line) => {
+        for line in reader.lines() {
+            match line {
+                Err(_) => continue,
+                Ok(line) => {
+                    if opts.loglevel_info() {
                         let now: DateTime<chrono::Local> = chrono::Local::now();
                         println!("[{}] {}: {}", now, workdir.to_str().unwrap(), line);
-
-                        output.push(line);
                     }
+
+                    output.push(line);
                 }
             }
         }
@@ -116,8 +133,10 @@ fn verify_directory(workdir: PathBuf, known_good_path: String, to_check_path: St
         let exit_status = child.wait().unwrap();
 
         if exit_status.success() {
-            let mut file = OpenOptions::new().create(true).append(true).open(known_good_path).unwrap();
-            if let Err(e) = writeln!(file, "{}", workdir.to_str().unwrap()) {
+            // every file from _algorithm_sum.txt was correct
+
+            let mut known_good_file = OpenOptions::new().create(true).append(true).open(known_good_path).unwrap();
+            if let Err(e) = writeln!(known_good_file, "{}", workdir.to_str().unwrap()) {
                 eprintln!("Error writing to file: {}", e);
             }
 
@@ -126,8 +145,10 @@ fn verify_directory(workdir: PathBuf, known_good_path: String, to_check_path: St
                 println!("[{}] {}: checked: OK", now, workdir.to_str().unwrap());
             }
         } else {
-            let mut file = OpenOptions::new().create(true).append(true).open(to_check_path).unwrap();
-            if let Err(e) = writeln!(file, "{}", workdir.to_str().unwrap()) {
+            // some files from _algorithm_sum.txt were INCORRECT
+
+            let mut to_check_file = OpenOptions::new().create(true).append(true).open(to_check_path).unwrap();
+            if let Err(e) = writeln!(to_check_file, "{}", workdir.to_str().unwrap()) {
                 eprintln!("Error writing to file: {}", e);
             }
 
@@ -149,6 +170,7 @@ fn verify_directory(workdir: PathBuf, known_good_path: String, to_check_path: St
             }
         }
     } else {
+        // The _algorithm_sum command can NOT be successfully executed in workdir
         if opts.loglevel_info() {
             let now = chrono::Local::now();
             println!("[{}] Directory {}: Permission Denied", now, workdir.to_str().unwrap());
@@ -156,36 +178,38 @@ fn verify_directory(workdir: PathBuf, known_good_path: String, to_check_path: St
     }
 }
 
+/// Build up a vec containing the paths to directories that were already checked
+///
+/// # Arguments
+///
+/// * `known_good_path` Path to the file containing directories that are known to be good
+/// * `to_check_path` Path to the file containing directories that are known to be bad
 fn read_already_checked(known_good_path: &str, to_check_path: &str) -> Vec<PathBuf> {
     let mut already_checked = Vec::new();
 
-    let known_good_file = OpenOptions::new().read(true).open(known_good_path);
-    match known_good_file {
-        Err(_) => {},
-        Ok(file) => {
-            let reader = BufReader::new(file);
-            for line in reader.lines() {
-                match line {
-                    Err(_) => {},
-                    Ok(line) => already_checked.push(PathBuf::from(line))
-                }
-            }
-        }
-    }
-
-    let to_check_file = OpenOptions::new().read(true).open(to_check_path);
-    match to_check_file {
-        Err(_) => {},
-        Ok(file) => {
-            let reader = BufReader::new(file);
-            for line in reader.lines() {
-                match line {
-                    Err(_) => {},
-                    Ok(line) => already_checked.push(PathBuf::from(line))
-                }
-            }
-        }
-    }
+    already_checked.append(&mut read_paths_from_file(known_good_path));
+    already_checked.append(&mut read_paths_from_file(to_check_path));
 
     already_checked
+}
+
+/// Read paths line by line from a file and return them in a vec
+///
+/// # Arguments
+///
+/// * `filepath` Path to the file to be read
+fn read_paths_from_file(filepath: &str) -> Vec<PathBuf> {
+    let mut vec = Vec::new();
+
+    let file = OpenOptions::new().read(true).open(filepath);
+    if let Ok(file) = file {
+        let reader = BufReader::new(file);
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                vec.push(PathBuf::from(line));
+            }
+        }
+    }
+
+    vec
 }

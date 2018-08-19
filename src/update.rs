@@ -80,6 +80,12 @@ pub fn update_directories(opts: super::util::Options) {
     }
 }
 
+/// Updates the _algorithm_sum.txt in a directory
+///
+/// # Arguments
+///
+/// * `path` The path to the directory that is going to be updated
+/// * `opts` An Options object containing information about the program behavior
 fn update_hashsums(path: PathBuf, opts: super::util::Options) {
     let dirwalker = DirWalker::new(&path, opts.subdir_mode);
     let reader = BufReader::new(dirwalker);
@@ -163,6 +169,11 @@ impl DirWalker {
         dirwalker
     }
 
+    /// Update the DirWalker object by adding all subdirectories and files of directory to the queue
+    ///
+    /// # Arguments
+    ///
+    /// * `directory` Path to the directory that is going to be scanned
     fn populate_with_dir(&mut self, directory: &PathBuf) {
         let dir_entries = fs::read_dir(directory);
 
