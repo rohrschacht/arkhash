@@ -135,9 +135,11 @@ fn verify_directory(workdir: PathBuf, known_good_path: String, to_check_path: St
         if exit_status.success() {
             // every file from _algorithm_sum.txt was correct
 
-            let mut known_good_file = OpenOptions::new().create(true).append(true).open(known_good_path).unwrap();
-            if let Err(e) = writeln!(known_good_file, "{}", workdir.to_str().unwrap()) {
-                eprintln!("Error writing to file: {}", e);
+            if opts.subdir_mode {
+                let mut known_good_file = OpenOptions::new().create(true).append(true).open(known_good_path).unwrap();
+                if let Err(e) = writeln!(known_good_file, "{}", workdir.to_str().unwrap()) {
+                    eprintln!("Error writing to file: {}", e);
+                }
             }
 
             if opts.loglevel_info() {
@@ -147,9 +149,11 @@ fn verify_directory(workdir: PathBuf, known_good_path: String, to_check_path: St
         } else {
             // some files from _algorithm_sum.txt were INCORRECT
 
-            let mut to_check_file = OpenOptions::new().create(true).append(true).open(to_check_path).unwrap();
-            if let Err(e) = writeln!(to_check_file, "{}", workdir.to_str().unwrap()) {
-                eprintln!("Error writing to file: {}", e);
+            if opts.subdir_mode {
+                let mut to_check_file = OpenOptions::new().create(true).append(true).open(to_check_path).unwrap();
+                if let Err(e) = writeln!(to_check_file, "{}", workdir.to_str().unwrap()) {
+                    eprintln!("Error writing to file: {}", e);
+                }
             }
 
             if opts.loglevel_info() {
@@ -166,7 +170,7 @@ fn verify_directory(workdir: PathBuf, known_good_path: String, to_check_path: St
             if opts.loglevel_debug() {
                 println!("Filepath for Bad Files: {:?}", bad_hashlines_filepath);
             }
-            
+
             let mut bad_hashlines_file = OpenOptions::new().create(true).append(true).open(bad_hashlines_filepath).unwrap();
 
             for line in output {
