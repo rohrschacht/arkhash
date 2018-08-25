@@ -157,10 +157,16 @@ fn verify_directory(workdir: PathBuf, known_good_path: String, to_check_path: St
                 println!("[{}] Directory {} checked: FAILED", now, workdir.to_str().unwrap());
             }
 
-            let bad_hashlines_filepath = format!("to_check_{}.txt", &workdir.to_str().unwrap()[2..]);
+            let mut to_check_dir = workdir.to_str().unwrap();
+            if to_check_dir.len() > 2 {
+                to_check_dir = &to_check_dir[2..];
+            }
+
+            let bad_hashlines_filepath = format!("to_check_{}.txt", to_check_dir);
             if opts.loglevel_debug() {
                 println!("Filepath for Bad Files: {:?}", bad_hashlines_filepath);
             }
+            
             let mut bad_hashlines_file = OpenOptions::new().create(true).append(true).open(bad_hashlines_filepath).unwrap();
 
             for line in output {
