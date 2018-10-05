@@ -3,7 +3,6 @@
 
 extern crate regex;
 
-use self::regex::Regex;
 use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::io::{BufRead, BufReader, Read};
@@ -46,20 +45,12 @@ impl<T> Filter<T> {
             },
 
             Ok(file) => {
-                let file_path_re = match opts.algorithm.as_ref() {
-                    "sha1" => Regex::new(r"[[:xdigit:]]{40}\s\s(.*)$").unwrap(),
-                    "md5" => Regex::new(r"[[:xdigit:]]{32}\s\s(.*)$").unwrap(),
-                    "sha224" => Regex::new(r"[[:xdigit:]]{56}\s\s(.*)$").unwrap(),
-                    "sha256" => Regex::new(r"[[:xdigit:]]{64}\s\s(.*)$").unwrap(),
-                    "sha384" => Regex::new(r"[[:xdigit:]]{96}\s\s(.*)$").unwrap(),
-                    "sha512" => Regex::new(r"[[:xdigit:]]{128}\s\s(.*)$").unwrap(),
-                    _ => {return Err("Could not recognize hashing algorithm")}
-                };
+                let file_path_re = super::util::regex_from_opts(&opts)?;
 
                 for line in BufReader::new(file).lines() {
                     if let Ok(line) = line {
                         if let Some(captures) = file_path_re.captures(&line) {
-                            let path = &captures[1];
+                            let path = &captures[2];
                             already_calculated_files.insert(path.to_string(), true);
                         } else { continue }
                     } else { continue }

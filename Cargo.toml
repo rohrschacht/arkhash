@@ -1,6 +1,6 @@
 [package]
 name = "hashfilter"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Tobias Petrich <tobias.petrich@campus.tu-berlin.de>"]
 
 [dependencies]
