@@ -237,8 +237,10 @@ fn verify_directory_with_progressbar(workdir: &PathBuf, opts: &super::util::Opti
         if let Ok(line) = line {
             if let Some(captures) = file_path_re.captures(&line) {
                 let path = &captures[2];
-                let metadata = fs::metadata(format!("{}/{}", workdir.to_str().unwrap(), path)).unwrap();
-                all_bytes += metadata.len();
+                let metadata = fs::metadata(format!("{}/{}", workdir.to_str().unwrap(), path));
+                if let Ok(metadata) = metadata {
+                    all_bytes += metadata.len();
+                }
             }
         }
     }
@@ -265,8 +267,10 @@ fn verify_directory_with_progressbar(workdir: &PathBuf, opts: &super::util::Opti
                     }
                 }
 
-                let metadata = fs::metadata(format!("{}/{}", workdir.to_str().unwrap(), path)).unwrap();
-                processed_bytes += metadata.len();
+                let metadata = fs::metadata(format!("{}/{}", workdir.to_str().unwrap(), path));
+                if let Ok(metadata) = metadata {
+                    processed_bytes += metadata.len();
+                }
 
                 print_progress(&print_mutex, &all_bytes, &processed_bytes, &print_line, &workdir);
             }
