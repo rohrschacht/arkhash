@@ -2,6 +2,7 @@
 
 extern crate chrono;
 extern crate threadpool;
+extern crate termios;
 
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -32,19 +33,24 @@ pub fn verify_directories(opts: super::util::Options) {
     }
 
     let print_mutex = Arc::new(Mutex::new(0));
+    let termios_original = termios::Termios::from_fd(0).unwrap();
+    let mut termios_noecho = termios_original.clone();
+    termios_noecho.c_lflag &= !termios::ECHO;
 
     // no-subdir: execute in directory
     // subdir: iterate over subdirs and spawn verify_directory threads, if path not in vec
     match opts.subdir_mode {
         false => {
             if opts.loglevel_progress() {
+                let _unused = termios::tcsetattr(0, termios::TCSANOW, &termios_noecho).unwrap();
                 println!();
             }
-            verify_directory(PathBuf::from(&opts.folder), known_good_path, to_check_path, opts, 1, print_mutex);
+            verify_directory(PathBuf::from(&opts.folder), known_good_path, to_check_path, opts, 1, print_mutex, 0);
         },
         true => {
             let dir_entries = fs::read_dir(&opts.folder).unwrap();
             let mut dirs_to_process = Vec::new();
+            let mut longest_folder = 0;
 
             for entry in dir_entries {
                 let entry = entry.unwrap();
@@ -52,12 +58,18 @@ pub fn verify_directories(opts: super::util::Options) {
 
                 if metadata.is_dir() {
                     dirs_to_process.push(entry.path());
+
+                    let len = entry.path().to_str().unwrap().len();
+                    if len > longest_folder {
+                        longest_folder = len;
+                    }
                 }
             }
 
             let dirs_to_process: Vec<PathBuf> = dirs_to_process.into_iter().filter(|x| !already_checked.contains(x)).collect();
 
             if opts.loglevel_progress() {
+                let _unused = termios::tcsetattr(0, termios::TCSANOW, &termios_noecho).unwrap();
                 for _ in 0..dirs_to_process.len() {
                     println!();
                 }
@@ -77,7 +89,7 @@ pub fn verify_directories(opts: super::util::Options) {
                         let thread_print_mutex = print_mutex.clone();
                         let thread_print_line = print_line.clone();
                         let handle = thread::spawn(move || {
-                            verify_directory(thread_path, thread_known_good_path, thread_to_check_path, thread_opts, thread_print_line, thread_print_mutex);
+                            verify_directory(thread_path, thread_known_good_path, thread_to_check_path, thread_opts, thread_print_line, thread_print_mutex, longest_folder);
                         });
                         thread_handles.push(handle);
 
@@ -99,7 +111,7 @@ pub fn verify_directories(opts: super::util::Options) {
                         let thread_print_mutex = print_mutex.clone();
                         let thread_print_line = print_line.clone();
                         pool.execute(move || {
-                            verify_directory(thread_path, thread_known_good_path, thread_to_check_path, thread_opts, thread_print_line, thread_print_mutex);
+                            verify_directory(thread_path, thread_known_good_path, thread_to_check_path, thread_opts, thread_print_line, thread_print_mutex, longest_folder);
                         });
 
                         print_line += 1;
@@ -120,7 +132,7 @@ pub fn verify_directories(opts: super::util::Options) {
 /// * `known_good_path` The file the workdir path gets appended to if the directory is verified to be good
 /// * `to_check_path` The file the workdir path gets appended to if the directory is not verified to be good
 /// * `opts` An Options object containing information about the program behavior
-fn verify_directory(workdir: PathBuf, known_good_path: String, to_check_path: String, opts: super::util::Options, print_line: u32, print_mutex: Arc<Mutex<i32>>) {
+fn verify_directory(workdir: PathBuf, known_good_path: String, to_check_path: String, opts: super::util::Options, print_line: u32, print_mutex: Arc<Mutex<i32>>, longest_folder: usize) {
     if opts.loglevel_info() {
         let now: DateTime<chrono::Local> = chrono::Local::now();
         println!("[{}] Verifying Directory {}", now, workdir.to_str().unwrap());
@@ -130,7 +142,7 @@ fn verify_directory(workdir: PathBuf, known_good_path: String, to_check_path: St
     let mut success = false;
 
     if opts.loglevel_progress() {
-        verify_directory_with_progressbar(&workdir, &opts, &print_line, &print_mutex, &mut failed_paths, &mut success);
+        verify_directory_with_progressbar(&workdir, &opts, &print_line, &print_mutex, &mut failed_paths, &mut success, longest_folder);
     } else {
         verify_directory_oneshot(&workdir, &opts, &mut failed_paths, &mut success);
     }
@@ -220,7 +232,7 @@ fn verify_directory_oneshot(workdir: &PathBuf, opts: &super::util::Options, fail
     }
 }
 
-fn verify_directory_with_progressbar(workdir: &PathBuf, opts: &super::util::Options, print_line: &u32, print_mutex: &Arc<Mutex<i32>>, failed_paths: &mut Vec<String>, success: &mut bool) {
+fn verify_directory_with_progressbar(workdir: &PathBuf, opts: &super::util::Options, print_line: &u32, print_mutex: &Arc<Mutex<i32>>, failed_paths: &mut Vec<String>, success: &mut bool, longest_folder: usize) {
     let mut all_bytes: u64 = 5;
     let mut processed_bytes: u64 = 0;
     let file_path_re = match super::util::regex_from_opts(&opts) {
@@ -245,7 +257,7 @@ fn verify_directory_with_progressbar(workdir: &PathBuf, opts: &super::util::Opti
         }
     }
 
-    print_progress(&print_mutex, &all_bytes, &processed_bytes, &print_line, &workdir);
+    print_progress(&print_mutex, &all_bytes, &processed_bytes, &print_line, &workdir, longest_folder);
 
     let file = match OpenOptions::new().read(true).append(true).create(true).open(format!("{}/{}sum.txt", workdir.to_str().unwrap(), opts.algorithm)) {
         Ok(f) => f,
@@ -272,7 +284,7 @@ fn verify_directory_with_progressbar(workdir: &PathBuf, opts: &super::util::Opti
                     processed_bytes += metadata.len();
                 }
 
-                print_progress(&print_mutex, &all_bytes, &processed_bytes, &print_line, &workdir);
+                print_progress(&print_mutex, &all_bytes, &processed_bytes, &print_line, &workdir, longest_folder);
             }
         }
     }
@@ -286,12 +298,18 @@ fn verify_directory_with_progressbar(workdir: &PathBuf, opts: &super::util::Opti
     *success = failed_paths.is_empty();
 }
 
-fn print_progress(print_mutex: &Arc<Mutex<i32>>, all_bytes: &u64, processed_bytes: &u64, line: &u32, workdir: &PathBuf) {
+fn print_progress(print_mutex: &Arc<Mutex<i32>>, all_bytes: &u64, processed_bytes: &u64, line: &u32, workdir: &PathBuf, longest_folder: usize) {
     let _unused = print_mutex.lock().unwrap();
     let progress = *processed_bytes as f64 / *all_bytes as f64;
     print!("\x1b[s");
     print!("\x1b[{}A\x1b[2K", line);
-    print!("{}: {:03.2}% ", workdir.to_str().unwrap(), progress * 100.0);
+    print!("{}", workdir.to_str().unwrap());
+    let mut i = workdir.to_str().unwrap().len();
+    while i < longest_folder {
+        print!(" ");
+        i += 1;
+    }
+    print!(": {:03.2}% ", progress * 100.0);
     let progress_bar = 60.0 * progress;
     for i in 0..60 {
         if (i as f64) < progress_bar {
