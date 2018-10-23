@@ -21,6 +21,7 @@ with sensible data.
 * Filter out paths to files that have been hashed before
 * Multiple loglevels to control verbosity
 * Use multiple threads to increase performance
+* Show progress in verify mode with progress bars
 
 ## Dependencies
 hashfilter depends on sha1sum, md5sum, etc. to calculate the hashes.
@@ -59,6 +60,13 @@ sha1sum -c --quiet sha1sum.txt
 ```
 If the check of a file has failed you will be immediately informed via STDOUT and the path to the
 file will be stored in a to_check.txt file.
+
+Progressbars can be activated by using the progress loglevel.
+They also work in subdir mode.
+```
+hashfilter -v --loglevel=progress
+hashfilter -vs --loglevel=progress
+```
 
 ### Subdir Mode
 Let's assume you order your pictures like this:
@@ -103,3 +111,4 @@ This implementation of hashfilter makes use of the following awesome open source
 * [regex](https://crates.io/crates/regex)
 * [chrono](https://crates.io/crates/chrono)
 * [threadpool](https://crates.io/crates/threadpool)
+* [termios](https://crates.io/crates/termios)
