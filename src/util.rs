@@ -118,6 +118,7 @@ impl Options {
         self.log_level == LogLevel::Debug || self.log_level == LogLevel::Info
     }
 
+    /// Indicates that the program is in the progress loglevel
     pub fn loglevel_progress(&self) -> bool {
         self.log_level == LogLevel::Progress
     }
@@ -165,7 +166,10 @@ fn prepare_args(args: Vec<String>) -> Vec<String> {
     prepared_args
 }
 
-
+/// Creates a regex that identifies hashsum and path from a hashsum line.
+///
+/// # Arguments
+/// * `opts` Options object that contains the desired algorithm
 pub fn regex_from_opts(opts: &Options) -> Result<Regex, &'static str> {
     match opts.algorithm.as_ref() {
         "sha1" => Ok(Regex::new(r"([[:xdigit:]]{40})\s\s(.*)$").unwrap()),

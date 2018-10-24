@@ -23,7 +23,7 @@ impl<T> Filter<T> {
     ///
     /// # Arguments
     ///
-    /// * `input` The BufReader which lines will be filtered through this object
+    /// * `input` The BufReader that will be filtered through this object
     /// * `sumfile_path` The path to the _algorithm_sum.txt file that contains the already calculated hashsums
     /// * `opts` A reference to the Options object containing information about the program behavior
     ///
