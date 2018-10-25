@@ -68,6 +68,7 @@ pub fn verify_directories(opts: super::util::Options) {
 }
 
 /// Reads all directories in the working directory and compares them with already checked directories.
+/// Ignores directories that don't contain an _algorithm_sum.txt file.
 /// Returns unchecked directories and the number of characters in the name of the directory with the longest name.
 ///
 /// # Arguments
@@ -82,17 +83,22 @@ fn gather_directories_to_process(opts: &super::util::Options, already_checked: V
         let entry = entry.unwrap();
         let metadata = entry.metadata().unwrap();
 
-        if metadata.is_dir() {
-            dirs_to_process.push(entry.path());
+        if metadata.is_dir() && ! already_checked.contains(&entry.path()) {
+            let sum_txt_path = fs::metadata(format!("{}/{}sum.txt", entry.path().to_str().unwrap(), &opts.algorithm));
+            if let Ok(path) = sum_txt_path {
+                if path.is_file() {
+                    dirs_to_process.push(entry.path());
 
-            let len = entry.path().to_str().unwrap().len();
-            if len > longest_folder {
-                longest_folder = len;
+                    let len = entry.path().to_str().unwrap().len();
+                    if len > longest_folder {
+                        longest_folder = len;
+                    }
+                }
             }
         }
     }
 
-    (dirs_to_process.into_iter().filter(|x| !already_checked.contains(x)).collect(), longest_folder)
+    (dirs_to_process, longest_folder)
 }
 
 /// Starts a thread for every directory in dirs_to_process and launches them all at once.
@@ -440,29 +446,8 @@ fn print_message(line: &u32, message: &str, workdir: &PathBuf) -> Result<(), io:
 fn read_already_checked(known_good_path: &str, to_check_path: &str) -> Vec<PathBuf> {
     let mut already_checked = Vec::new();
 
-    already_checked.append(&mut read_paths_from_file(known_good_path));
-    already_checked.append(&mut read_paths_from_file(to_check_path));
+    already_checked.append(&mut super::util::read_paths_from_file(known_good_path));
+    already_checked.append(&mut super::util::read_paths_from_file(to_check_path));
 
     already_checked
-}
-
-/// Read paths line by line from a file and return them in a vec
-///
-/// # Arguments
-///
-/// * `filepath` Path to the file to be read
-fn read_paths_from_file(filepath: &str) -> Vec<PathBuf> {
-    let mut vec = Vec::new();
-
-    let file = OpenOptions::new().read(true).open(filepath);
-    if let Ok(file) = file {
-        let reader = BufReader::new(file);
-        for line in reader.lines() {
-            if let Ok(line) = line {
-                vec.push(PathBuf::from(line));
-            }
-        }
-    }
-
-    vec
 }

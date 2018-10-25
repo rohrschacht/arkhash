@@ -160,6 +160,22 @@ rm -f known_good*
 rm -f to_check*
 
 
+echo "Preparing Update-Subdir-Ignore..."
+echo "Creating 'ignore' directory and appending it to .hfignore"
+mkdir ignore
+touch ignore/test1
+touch ignore/test2
+echo 'ignore' >> .hfignore
+
+echo "Testing Update-Subdir-Ignore..."
+../hashfilter -us
+if [[ -e ignore/sha1sum.txt ]]; then
+  echo "Update-Subdir-Ignore FAILED"
+  ((FAIL_COUNT++))
+  FAILED_TESTS+="Update-Subdir-Ignore\n"
+fi
+
+
 echo "Testing Verify-Subdir-Progress..."
 echo "You now need to visually check for uglyness. Feel free to press some Keys while the program is running, as they should not be echoed. Press Enter when you are ready."
 read
@@ -169,6 +185,7 @@ echo "hashfilter -vs --loglevel=progress"
 
 echo -e "\n\nNumber of failed tests: $FAIL_COUNT"
 if [[ ! -z $FAILED_TESTS ]]; then
+  echo "Tests that failed:"
   echo -e "$FAILED_TESTS"
 fi
 

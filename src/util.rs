@@ -3,9 +3,9 @@
 extern crate regex;
 
 use self::regex::Regex;
-use std::io::{Read, Error};
+use std::io::{Read, Error, BufReader, BufRead};
 use std::path::{PathBuf};
-use std::fs::{self};
+use std::fs::{self, OpenOptions};
 use std::process::{Command};
 
 
@@ -196,6 +196,27 @@ pub fn regex_from_opts(opts: &Options) -> Result<Regex, &'static str> {
 pub fn calculate_hash(path: String, workdir: &PathBuf, opts: &super::util::Options) -> String {
     let output = Command::new(format!("{}sum", opts.algorithm)).arg(path).current_dir(workdir).output().unwrap();
     String::from_utf8_lossy(&output.stdout).to_string()
+}
+
+/// Read paths line by line from a file and return them in a Vector
+///
+/// # Arguments
+///
+/// * `filepath` Path to the file to be read
+pub fn read_paths_from_file(filepath: &str) -> Vec<PathBuf> {
+    let mut vec = Vec::new();
+
+    let file = OpenOptions::new().read(true).open(filepath);
+    if let Ok(file) = file {
+        let reader = BufReader::new(file);
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                vec.push(PathBuf::from(line));
+            }
+        }
+    }
+
+    vec
 }
 
 

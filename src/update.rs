@@ -33,23 +33,49 @@ pub fn update_directories(opts: super::util::Options) {
 }
 
 /// Reads all directories in the working directory.
+/// Ignores all directories listed in .hfignore
 ///
 /// # Arguments
 /// * `opts` Options object containing the working directory
 fn gather_directories_to_process(opts: &super::util::Options) -> Vec<PathBuf> {
     let dir_entries = fs::read_dir(&opts.folder).unwrap();
+    let to_ignore = read_to_ignore(&opts);
+
+    if opts.loglevel_debug() {
+        println!("Dirs to ignore: {:?}", to_ignore);
+    }
 
     let mut dirs_to_process = Vec::new();
     for entry in dir_entries {
         let entry = entry.unwrap();
         let metadata = entry.metadata().unwrap();
 
-        if metadata.is_dir() {
+        if metadata.is_dir() && ! to_ignore.contains(&entry.path()) {
             dirs_to_process.push(entry.path());
         }
     }
 
     dirs_to_process
+}
+
+/// Reads the .hfignore file and returns a Vector of directories that should be ignored when updating hashes.
+///
+/// # Arguments
+/// * `opts` Options object containing the working directory
+fn read_to_ignore(opts: &super::util::Options) -> Vec<PathBuf> {
+    let to_ignore = super::util::read_paths_from_file(&format!("{}{}", &opts.folder, "/.hfignore"));
+    let mut to_ignore_prepended = Vec::new();
+
+    for path in to_ignore {
+        if ! path.to_str().unwrap().starts_with("./") {
+            let new_path = PathBuf::from(format!("./{}", path.to_str().unwrap()));
+            to_ignore_prepended.push(new_path);
+        } else {
+            to_ignore_prepended.push(path);
+        }
+    }
+
+    to_ignore_prepended
 }
 
 /// Starts a thread for every directory in dirs_to_process and launches them all at once.
