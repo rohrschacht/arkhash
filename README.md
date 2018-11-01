@@ -22,6 +22,7 @@ with sensible data.
 * Multiple loglevels to control verbosity
 * Use multiple threads to increase performance
 * Show progress in verify mode with progress bars
+* Ignore directories from .hfignore in subdir-mode
 
 ## Dependencies
 hashfilter depends on sha1sum, md5sum, etc. to calculate the hashes.
@@ -84,6 +85,28 @@ This should increase throughput and decrease execution time on multi-core machin
 You can limit the number of threads hashfilter will spawn via command line options.
 If you limit the number of threads to 2 in this example, hashfilter will operate on 2015 and 2016
 concurrently and go on with the next folder if one of them finishes.
+
+#### .hfignore File
+When the program operates in Update-Subdir mode, it will read a .hfignore text file in the working directory if it exists.
+You can specify subdirectories that should be ignored by this program. Just list the names of these
+directories line by line.
+
+In the following example the directories "editing-workspace" and "trash" will be ignored on updating
+(and thereby on verifying).
+```
+.hfignore contents:
+editing-workspace
+trash
+
+filesystem:
+pictures
+├── 2015
+├── 2016
+├── 2017
+├── 2018
+├── editing-workspace
+└── trash
+```
 
 ## Help message
 ```
