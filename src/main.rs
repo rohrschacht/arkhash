@@ -1,14 +1,13 @@
-pub mod util;
 pub mod filter;
 pub mod update;
+pub mod util;
 pub mod verify;
-
 
 fn main() {
     let opts = util::Options::new(std::env::args().collect());
 
     if opts.help {
-        const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+        const VERSION: &str = env!("CARGO_PKG_VERSION");
         print!("{} Version {}
 
 Usage:
@@ -46,12 +45,12 @@ Arguments:
                     }
                 }
             }
-        },
+        }
         util::Mode::Update => {
-            update::update_directories(opts);
-        },
+            update::update_directories(&opts);
+        }
         util::Mode::Verify => {
-            verify::verify_directories(opts);
+            verify::verify_directories(&opts);
         }
     }
 }

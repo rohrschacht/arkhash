@@ -7,7 +7,6 @@ use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::io::{BufRead, BufReader, Read};
 
-
 /// The structure that gets wrapped around a BufReader to filter it
 pub struct Filter<T> {
     /// The filenames that were already hashed in the past, gathered through reading _algorithm_sum.txt
@@ -15,7 +14,7 @@ pub struct Filter<T> {
     /// The BufReader that will be read and filtered
     input: BufReader<T>,
     /// The algorithm that was used to hash the files eg "sha1"
-    algorithm: String
+    algorithm: String,
 }
 
 impl<T> Filter<T> {
@@ -31,18 +30,20 @@ impl<T> Filter<T> {
     ///
     /// If the _algorithm_sum.txt file can not be read or the algorithm can not be recognized,
     /// an Err will be returned instead of a Filter.
-    pub fn new(input: BufReader<T>, sumfile_path: &str, opts: &super::util::Options) -> Result<Filter<T>, &'static str> {
+    pub fn new(
+        input: BufReader<T>,
+        sumfile_path: &str,
+        opts: &super::util::Options,
+    ) -> Result<Self, &'static str> {
         let mut already_calculated_files = HashMap::new();
 
         match OpenOptions::new()
             .read(true)
             .append(true)
             .create(true)
-            .open(format!("{}/{}sum.txt", sumfile_path, opts.algorithm)) {
-
-            Err(_) => {
-                return Err("Could not open _algorithm_sum.txt");
-            },
+            .open(format!("{}/{}sum.txt", sumfile_path, opts.algorithm))
+        {
+            Err(_) => Err("Could not open _algorithm_sum.txt"),
 
             Ok(file) => {
                 let file_path_re = super::util::regex_from_opts(&opts)?;
@@ -52,11 +53,19 @@ impl<T> Filter<T> {
                         if let Some(captures) = file_path_re.captures(&line) {
                             let path = &captures[2];
                             already_calculated_files.insert(path.to_string(), true);
-                        } else { continue }
-                    } else { continue }
+                        } else {
+                            continue;
+                        }
+                    } else {
+                        continue;
+                    }
                 }
 
-                Ok(Filter{already_calculated_files, input, algorithm: opts.algorithm.clone()})
+                Ok(Filter {
+                    already_calculated_files,
+                    input,
+                    algorithm: opts.algorithm.clone(),
+                })
             }
         }
     }
@@ -72,18 +81,18 @@ impl<T: Read> Iterator for Filter<T> {
                 Ok(line) => {
                     let contained = self.already_calculated_files.contains_key(&line);
                     if contained {
-                        continue
+                        continue;
                     }
 
                     if line == format!("./{}sum.txt", self.algorithm) {
-                        continue
+                        continue;
                     }
 
-                    return Some(line)
+                    return Some(line);
                 }
             }
         }
 
-        return None
+        None
     }
 }

@@ -3,18 +3,17 @@
 extern crate regex;
 
 use self::regex::Regex;
-use std::io::{Read, Error, BufReader, BufRead};
-use std::path::{PathBuf};
 use std::fs::{self, OpenOptions};
-use std::process::{Command};
-
+use std::io::{BufRead, BufReader, Error, Read};
+use std::path::PathBuf;
+use std::process::Command;
 
 /// The mode the program will operate in
 #[derive(Debug, Clone)]
 pub enum Mode {
     Filter,
     Update,
-    Verify
+    Verify,
 }
 
 /// The level of detail the program will be logging
@@ -23,7 +22,7 @@ pub enum LogLevel {
     Quiet,
     Info,
     Progress,
-    Debug
+    Debug,
 }
 
 /// A single structure that gets constructed by commandline arguments and describes the behavior of the program
@@ -44,7 +43,7 @@ pub struct Options {
     /// Maximum number of threads to spawn
     pub num_threads: usize,
     /// The folder to operate on
-    pub folder: String
+    pub folder: String,
 }
 
 impl Options {
@@ -62,7 +61,7 @@ impl Options {
             mode: Mode::Filter,
             log_level: LogLevel::Info,
             num_threads: 0,
-            folder: ".".to_string()
+            folder: ".".to_string(),
         };
 
         // prepare Strings for parsing
@@ -75,32 +74,56 @@ impl Options {
             let arg = &args[i];
 
             // match options (Strings with leading -)
-            if arg.starts_with("-") {
+            if arg.starts_with('-') {
                 match arg.as_ref() {
-                    "-a" | "--algo" | "--algorithm" => opts.algorithm = args[i + 1].clone().to_lowercase(),
+                    "-a" | "--algo" | "--algorithm" => {
+                        opts.algorithm = args[i + 1].clone().to_lowercase()
+                    }
                     "-s" | "--subdir" | "--subdirs" | "--subdirectories" => opts.subdir_mode = true,
                     "-u" | "--update" => opts.mode = Mode::Update,
                     "-v" | "--verify" => opts.mode = Mode::Verify,
-                    "--loglevel" | "--log_level" | "--log-level" => opts.log_level = {
-                        match args.get(i + 1).expect(format!("Usage: {} {} quiet/info/debug", opts.program_name, args[i]).as_ref()).as_ref() {
-                            "none" | "quiet" | "0" => LogLevel::Quiet,
-                            "info" | "1" => LogLevel::Info,
-                            "progress" => LogLevel::Progress,
-                            "debug" | "2" => LogLevel::Debug,
-                            _ => LogLevel::Info
+                    "--loglevel" | "--log_level" | "--log-level" => {
+                        opts.log_level = {
+                            match args
+                                .get(i + 1)
+                                .unwrap_or_else(|| {
+                                    panic!(
+                                        "Usage: {} {} quiet/info/debug",
+                                        opts.program_name, args[i]
+                                    )
+                                })
+                                .as_ref()
+                            {
+                                "none" | "quiet" | "0" => LogLevel::Quiet,
+                                "info" | "1" => LogLevel::Info,
+                                "progress" => LogLevel::Progress,
+                                "debug" | "2" => LogLevel::Debug,
+                                _ => LogLevel::Info,
+                            }
                         }
-                    },
+                    }
                     "--quiet" => opts.log_level = LogLevel::Quiet,
-                    "-T" | "--threads" => opts.num_threads = args.get(i + 1).expect(format!("Usage: {} -T NUMBER_OF_MAX_THREADS", opts.program_name).as_ref())
-                        .trim().parse().expect(format!("Usage: {} -T NUMBER_OF_MAX_THREADS", opts.program_name).as_ref()),
+                    "-T" | "--threads" => {
+                        opts.num_threads = args
+                            .get(i + 1)
+                            .unwrap_or_else(|| {
+                                panic!("Usage: {} -T NUMBER_OF_MAX_THREADS", opts.program_name)
+                            })
+                            .trim()
+                            .parse()
+                            .unwrap_or_else(|_| {
+                                panic!("Usage: {} -T NUMBER_OF_MAX_THREADS", opts.program_name)
+                            })
+                    }
                     "-h" | "--help" => opts.help = true,
-                    _ => opts.help = true
+                    _ => opts.help = true,
                 }
             } else {
                 // if a String does not start with - and the String before it is none of the below, it is the folder to operate on
                 match args[i - 1].as_ref() {
-                    "--loglevel" | "--log_level" | "--log-level" | "-a" | "--algo" | "--algorithm" | "-T" | "--threads" => {},
-                    _ => opts.folder = arg.clone()
+                    "--loglevel" | "--log_level" | "--log-level" | "-a" | "--algo"
+                    | "--algorithm" | "-T" | "--threads" => {}
+                    _ => opts.folder = arg.clone(),
                 }
             }
         }
@@ -139,28 +162,23 @@ fn prepare_args(args: Vec<String>) -> Vec<String> {
     let mut prepared_args = Vec::with_capacity(args.len());
 
     for arg in args {
-        match arg.contains("=") {
-            false => {
-                if arg.contains("-") && !arg.contains("--") && arg.len() > 2 {
-                    let characters = &arg[1..];
-                    for char in characters.chars() {
-                        let single_arg = format!("-{}", char);
-                        prepared_args.push(single_arg);
-                    }
-                } else {
-                    prepared_args.push(arg);
+        if !arg.contains('=') {
+            if arg.contains('-') && !arg.contains("--") && arg.len() > 2 {
+                let characters = &arg[1..];
+                for char in characters.chars() {
+                    let single_arg = format!("-{}", char);
+                    prepared_args.push(single_arg);
                 }
-            },
-            true => {
-                let position = arg.find("=").unwrap();
-                let prefix = arg[0..position].to_string();
-                let suffix = arg[position + 1 ..].to_string();
-                prepared_args.push(prefix);
-                prepared_args.push(suffix);
+            } else {
+                prepared_args.push(arg);
             }
+        } else {
+            let position = arg.find('=').unwrap();
+            let prefix = arg[0..position].to_string();
+            let suffix = arg[position + 1..].to_string();
+            prepared_args.push(prefix);
+            prepared_args.push(suffix);
         }
-
-
     }
 
     prepared_args
@@ -178,7 +196,7 @@ pub fn regex_from_opts(opts: &Options) -> Result<Regex, &'static str> {
         "sha256" => Ok(Regex::new(r"([[:xdigit:]]{64})\s\s(.*)$").unwrap()),
         "sha384" => Ok(Regex::new(r"([[:xdigit:]]{96})\s\s(.*)$").unwrap()),
         "sha512" => Ok(Regex::new(r"([[:xdigit:]]{128})\s\s(.*)$").unwrap()),
-        _ => { return Err("Could not recognize hashing algorithm") }
+        _ => Err("Could not recognize hashing algorithm"),
     }
 }
 
@@ -194,7 +212,11 @@ pub fn regex_from_opts(opts: &Options) -> Result<Regex, &'static str> {
 ///
 /// A String containing the output of the _algorithm_sum command.
 pub fn calculate_hash(path: String, workdir: &PathBuf, opts: &super::util::Options) -> String {
-    let output = Command::new(format!("{}sum", opts.algorithm)).arg(path).current_dir(workdir).output().unwrap();
+    let output = Command::new(format!("{}sum", opts.algorithm))
+        .arg(path)
+        .current_dir(workdir)
+        .output()
+        .unwrap();
     String::from_utf8_lossy(&output.stdout).to_string()
 }
 
@@ -219,7 +241,6 @@ pub fn read_paths_from_file(filepath: &str) -> Vec<PathBuf> {
     vec
 }
 
-
 /// An Object that returns Paths to all the files in all folders recursively (like find)
 ///
 /// DirWalker implements Iterator and Read for this behavior
@@ -231,7 +252,7 @@ pub struct DirWalker {
     /// A Buffer for the filepath that was only partially read
     unfinished_read: String,
     /// Whether or not the first directory should be stripped from the filepath
-    subdir_mode: bool
+    subdir_mode: bool,
 }
 
 impl DirWalker {
@@ -242,11 +263,11 @@ impl DirWalker {
     /// * `start_directory` Path to the directory that should be scanned
     /// * `subdir_mode` Whether or not the first directory should be stripped from the filepath
     pub fn new(start_directory: &PathBuf, subdir_mode: bool) -> DirWalker {
-        let mut dirwalker = DirWalker{
+        let mut dirwalker = DirWalker {
             current_files: Vec::new(),
             current_directories: Vec::new(),
             unfinished_read: String::new(),
-            subdir_mode
+            subdir_mode,
         };
 
         dirwalker.populate_with_dir(&start_directory);
@@ -294,7 +315,7 @@ impl Iterator for DirWalker {
             if self.subdir_mode {
                 let path_string = filepath.to_string_lossy().to_string();
                 let path_string = &path_string[2..];
-                let position = path_string.find("/").unwrap();
+                let position = path_string.find('/').unwrap();
                 let path_string = format!(".{}", path_string[position..].to_string());
                 let filepath = PathBuf::from(path_string);
                 return Some(filepath);
@@ -311,7 +332,7 @@ impl Iterator for DirWalker {
             return self.next();
         }
 
-        return None;
+        None
     }
 }
 
@@ -319,7 +340,7 @@ impl Read for DirWalker {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
         let mut i = 0;
 
-        if self.unfinished_read.len() > 0 {
+        if !self.unfinished_read.is_empty() {
             loop {
                 if i >= buf.len() || i >= self.unfinished_read.len() {
                     break;
@@ -347,7 +368,6 @@ impl Read for DirWalker {
                     if i >= buf.len() || i >= path_str.len() {
                         break;
                     }
-
 
                     buf[i] = path_str.as_bytes()[i];
                     i += 1;
