@@ -10,6 +10,8 @@ use std::io::{self, BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::thread;
+use std::sync::Arc;
+use std::borrow::Borrow;
 
 use self::chrono::{DateTime, Datelike};
 
@@ -20,7 +22,7 @@ use self::threadpool::ThreadPool;
 /// # Arguments
 ///
 /// * `opts` An Options object containing information about the program behavior
-pub fn verify_directories(opts: &super::util::Options) {
+pub fn verify_directories(opts: super::util::Options) {
     let now = chrono::Local::now();
     let known_good_path = format!("known_good_{}_{}.txt", now.month(), now.year());
     let to_check_path = format!("to_check_{}_{}.txt", now.month(), now.year());
@@ -45,9 +47,9 @@ pub fn verify_directories(opts: &super::util::Options) {
 
         verify_directory(
             &PathBuf::from(&opts.folder),
-            known_good_path,
-            to_check_path,
-            opts,
+            Arc::new(known_good_path),
+            Arc::new(to_check_path),
+            Arc::new(opts),
             1,
             0,
         );
@@ -66,17 +68,17 @@ pub fn verify_directories(opts: &super::util::Options) {
 
         match opts.num_threads {
             0 => execute_threads_unlimited(
-                &opts,
-                &known_good_path,
-                &to_check_path,
-                &dirs_to_process,
+                opts,
+                known_good_path,
+                to_check_path,
+                dirs_to_process,
                 longest_folder,
             ),
             _ => execute_threads_limited(
-                &opts,
-                &known_good_path,
-                &to_check_path,
-                &dirs_to_process,
+                opts,
+                known_good_path,
+                to_check_path,
+                dirs_to_process,
                 longest_folder,
             ),
         }
@@ -134,28 +136,30 @@ fn gather_directories_to_process(
 /// * `dirs_to_process` Vector of directory paths that have to be checked
 /// * `longest_folder` Number of characters in the name of the longest folder
 fn execute_threads_unlimited(
-    opts: &super::util::Options,
-    known_good_path: &str,
-    to_check_path: &str,
-    dirs_to_process: &[PathBuf],
+    opts: super::util::Options,
+    known_good_path: String,
+    to_check_path: String,
+    dirs_to_process: Vec<PathBuf>,
     longest_folder: usize,
 ) {
     let mut thread_handles = Vec::new();
     let mut print_line = 1;
+    let opts = Arc::new(opts);
+    let known_good_path = Arc::new(known_good_path);
+    let to_check_path = Arc::new(to_check_path);
 
     for entry in dirs_to_process {
-        let thread_path = entry.clone();
-        let thread_opts = opts.clone();
-        let thread_known_good_path = known_good_path.to_string();
-        let thread_to_check_path = to_check_path.to_string();
-        let thread_print_line = print_line;
+        let opts = Arc::clone(&opts);
+        let known_good_path = Arc::clone(&known_good_path);
+        let to_check_path = Arc::clone(&to_check_path);
+
         let handle = thread::spawn(move || {
             verify_directory(
-                &thread_path,
-                thread_known_good_path,
-                thread_to_check_path,
-                &thread_opts,
-                thread_print_line,
+                &entry,
+                known_good_path,
+                to_check_path,
+                opts,
+                print_line,
                 longest_folder,
             );
         });
@@ -180,28 +184,30 @@ fn execute_threads_unlimited(
 /// * `dirs_to_process` Vector of directory paths that have to be checked
 /// * `longest_folder` Number of characters in the name of the longest folder
 fn execute_threads_limited(
-    opts: &super::util::Options,
-    known_good_path: &str,
-    to_check_path: &str,
-    dirs_to_process: &[PathBuf],
+    opts: super::util::Options,
+    known_good_path: String,
+    to_check_path: String,
+    dirs_to_process: Vec<PathBuf>,
     longest_folder: usize,
 ) {
     let pool = ThreadPool::new(opts.num_threads);
     let mut print_line = 1;
+    let opts = Arc::new(opts);
+    let known_good_path = Arc::new(known_good_path);
+    let to_check_path = Arc::new(to_check_path);
 
     for entry in dirs_to_process {
-        let thread_path = entry.clone();
-        let thread_opts = opts.clone();
-        let thread_known_good_path = known_good_path.to_string();
-        let thread_to_check_path = to_check_path.to_string();
-        let thread_print_line = print_line;
+        let opts = Arc::clone(&opts);
+        let known_good_path = Arc::clone(&known_good_path);
+        let to_check_path = Arc::clone(&to_check_path);
+
         pool.execute(move || {
             verify_directory(
-                &thread_path,
-                thread_known_good_path,
-                thread_to_check_path,
-                &thread_opts,
-                thread_print_line,
+                &entry,
+                known_good_path,
+                to_check_path,
+                opts,
+                print_line,
                 longest_folder,
             );
         });
@@ -224,9 +230,9 @@ fn execute_threads_limited(
 /// * `longest_folder` Number of characters in the name of the longest folder, determines how many spaces are padded
 fn verify_directory(
     workdir: &PathBuf,
-    known_good_path: String,
-    to_check_path: String,
-    opts: &super::util::Options,
+    known_good_path: Arc<String>,
+    to_check_path: Arc<String>,
+    opts: Arc<super::util::Options>,
     print_line: u32,
     longest_folder: usize,
 ) {
@@ -254,11 +260,11 @@ fn verify_directory(
     };
 
     if success.is_ok() {
-        // every file from _algorithm_sum.txt was correct=
-        inform_directory_good(&workdir, known_good_path, &opts);
+        // every file from _algorithm_sum.txt was correct
+        inform_directory_good(&workdir, known_good_path, opts);
     } else {
         // some files from _algorithm_sum.txt were INCORRECT
-        inform_directory_bad(&workdir, to_check_path, &opts, &failed_paths);
+        inform_directory_bad(&workdir, to_check_path, opts, &failed_paths);
     }
 }
 
@@ -272,11 +278,13 @@ fn verify_directory(
 /// * `failed_paths` Vector of paths to files that have changed
 fn inform_directory_bad(
     workdir: &PathBuf,
-    to_check_path: String,
-    opts: &super::util::Options,
+    to_check_path: Arc<String>,
+    opts: Arc<super::util::Options>,
     failed_paths: &[String],
 ) {
     if opts.subdir_mode {
+        let to_check_path: &String = to_check_path.borrow();
+
         let mut to_check_file = OpenOptions::new()
             .create(true)
             .append(true)
@@ -320,8 +328,10 @@ fn inform_directory_bad(
 /// * `workdir` Path to the directory that was just checked
 /// * `known_good_path` Path to the text file containing all checked and good directories
 /// * `opts` The Options object determining subdir_mode and loglevel
-fn inform_directory_good(workdir: &PathBuf, known_good_path: String, opts: &super::util::Options) {
+fn inform_directory_good(workdir: &PathBuf, known_good_path: Arc<String>, opts: Arc<super::util::Options>) {
     if opts.subdir_mode {
+        let known_good_path: &String = known_good_path.borrow();
+
         let mut known_good_file = OpenOptions::new()
             .create(true)
             .append(true)
@@ -347,7 +357,7 @@ fn inform_directory_good(workdir: &PathBuf, known_good_path: String, opts: &supe
 /// * `failed_paths` Reference to a Vector of Paths to files that have changed unexpectedly
 fn verify_directory_oneshot(
     workdir: &PathBuf,
-    opts: &super::util::Options,
+    opts: &Arc<super::util::Options>,
     failed_paths: &mut Vec<String>,
 ) -> Result<(), io::Error> {
     let child = Command::new(format!("{}sum", opts.algorithm))
@@ -417,7 +427,7 @@ fn verify_directory_oneshot(
 /// * `longest_folder` Number of characters in the name of the longest folder
 fn verify_directory_with_progressbar(
     workdir: &PathBuf,
-    opts: &super::util::Options,
+    opts: &Arc<super::util::Options>,
     print_line: u32,
     failed_paths: &mut Vec<String>,
     longest_folder: usize,
@@ -502,7 +512,7 @@ fn verify_directory_with_progressbar(
 /// * `file_path_re` Regex used to extrapolate the filepath from the line containing filepath and hash
 fn count_bytes_from_txt(
     workdir: &PathBuf,
-    opts: &super::util::Options,
+    opts: &Arc<super::util::Options>,
     file_path_re: &regex::Regex,
 ) -> u64 {
     let mut all_bytes = 0;

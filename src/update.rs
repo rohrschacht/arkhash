@@ -7,6 +7,7 @@ use std::fs::{self, OpenOptions};
 use std::io::{BufReader, Write};
 use std::path::PathBuf;
 use std::thread;
+use std::sync::Arc;
 
 use self::chrono::DateTime;
 
@@ -17,15 +18,15 @@ use self::threadpool::ThreadPool;
 /// # Arguments
 ///
 /// * `opts` An Options object containing information about the program behavior
-pub fn update_directories(opts: &super::util::Options) {
+pub fn update_directories(opts: super::util::Options) {
     if !opts.subdir_mode {
-        update_hashsums(&PathBuf::from(&opts.folder), &opts)
+        update_hashsums(&PathBuf::from(&opts.folder), Arc::new(opts))
     } else {
         let dirs_to_process = gather_directories_to_process(&opts);
 
         match opts.num_threads {
-            0 => execute_threads_unlimited(&opts, dirs_to_process),
-            _ => execute_threads_limited(&opts, dirs_to_process),
+            0 => execute_threads_unlimited(opts, dirs_to_process),
+            _ => execute_threads_limited(opts, dirs_to_process),
         }
     }
 }
@@ -82,18 +83,19 @@ fn read_to_ignore(opts: &super::util::Options) -> Vec<PathBuf> {
 /// # Arguments
 /// * `opts` Options object
 /// * `dirs_to_process` Vector of directory paths that have to be updated
-fn execute_threads_unlimited(opts: &super::util::Options, dirs_to_process: Vec<PathBuf>) {
+fn execute_threads_unlimited(opts: super::util::Options, dirs_to_process: Vec<PathBuf>) {
     let mut thread_handles = Vec::new();
+    let opts = Arc::new(opts);
+
     for entry in dirs_to_process {
         if opts.loglevel_info() {
             let now: DateTime<chrono::Local> = chrono::Local::now();
             println!("[{}] Updating Directory {}", now, entry.to_str().unwrap());
         }
 
-        let thread_path = entry.clone();
-        let thread_opts = opts.clone();
+        let opts = Arc::clone(&opts);
         let handle = thread::spawn(move || {
-            update_hashsums(&thread_path, &thread_opts);
+            update_hashsums(&entry, opts);
         });
         thread_handles.push(handle);
     }
@@ -109,8 +111,9 @@ fn execute_threads_unlimited(opts: &super::util::Options, dirs_to_process: Vec<P
 /// # Arguments
 /// * `opts` Options object
 /// * `dirs_to_process` Vector of directory paths that have to be updated
-fn execute_threads_limited(opts: &super::util::Options, dirs_to_process: Vec<PathBuf>) {
+fn execute_threads_limited(opts: super::util::Options, dirs_to_process: Vec<PathBuf>) {
     let pool = ThreadPool::new(opts.num_threads);
+    let opts = Arc::new(opts);
 
     for entry in dirs_to_process {
         if opts.loglevel_info() {
@@ -118,10 +121,9 @@ fn execute_threads_limited(opts: &super::util::Options, dirs_to_process: Vec<Pat
             println!("[{}] Updating Directory {}", now, entry.to_str().unwrap());
         }
 
-        let thread_path = entry.clone();
-        let thread_opts = opts.clone();
+        let opts = Arc::clone(&opts);
         pool.execute(move || {
-            update_hashsums(&thread_path, &thread_opts);
+            update_hashsums(&entry, opts);
         });
     }
 
@@ -134,7 +136,7 @@ fn execute_threads_limited(opts: &super::util::Options, dirs_to_process: Vec<Pat
 ///
 /// * `path` The path to the directory that is going to be updated
 /// * `opts` An Options object containing information about the program behavior
-fn update_hashsums(path: &PathBuf, opts: &super::util::Options) {
+fn update_hashsums(path: &PathBuf, opts: Arc<super::util::Options>) {
     let dirwalker = super::util::DirWalker::new(&path, opts.subdir_mode);
     let reader = BufReader::new(dirwalker);
 

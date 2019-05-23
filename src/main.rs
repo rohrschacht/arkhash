@@ -47,10 +47,10 @@ Arguments:
             }
         }
         util::Mode::Update => {
-            update::update_directories(&opts);
+            update::update_directories(opts);
         }
         util::Mode::Verify => {
-            verify::verify_directories(&opts);
+            verify::verify_directories(opts);
         }
     }
 }
