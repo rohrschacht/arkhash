@@ -6,8 +6,8 @@ extern crate threadpool;
 use std::fs::{self, OpenOptions};
 use std::io::{BufReader, Write};
 use std::path::PathBuf;
-use std::thread;
 use std::sync::Arc;
+use std::thread;
 
 use self::chrono::DateTime;
 

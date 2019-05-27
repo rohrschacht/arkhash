@@ -5,13 +5,13 @@ extern crate regex;
 extern crate termios;
 extern crate threadpool;
 
+use std::borrow::Borrow;
 use std::fs::{self, OpenOptions};
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::thread;
 use std::sync::Arc;
-use std::borrow::Borrow;
+use std::thread;
 
 use self::chrono::{DateTime, Datelike};
 
@@ -328,7 +328,11 @@ fn inform_directory_bad(
 /// * `workdir` Path to the directory that was just checked
 /// * `known_good_path` Path to the text file containing all checked and good directories
 /// * `opts` The Options object determining subdir_mode and loglevel
-fn inform_directory_good(workdir: &PathBuf, known_good_path: Arc<String>, opts: Arc<super::util::Options>) {
+fn inform_directory_good(
+    workdir: &PathBuf,
+    known_good_path: Arc<String>,
+    opts: Arc<super::util::Options>,
+) {
     if opts.subdir_mode {
         let known_good_path: &String = known_good_path.borrow();
 

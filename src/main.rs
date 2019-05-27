@@ -8,7 +8,7 @@ fn main() {
 
     if opts.help {
         const VERSION: &str = env!("CARGO_PKG_VERSION");
-        print!("{} Version {}
+        println!("{} Version {}
 
 Usage:
  {} [OPTION] [DIRECTORY]
@@ -22,8 +22,7 @@ Arguments:
  -T, --threads THREADS                  spawn a maximum of THREADS worker threads (default: 0: no cap)
  -h, --help                             show this help message
  -u, --update                           switch to update mode
- -v, --verify                           switch to verify mode
-"
+ -v, --verify                           switch to verify mode"
                , opts.program_name, VERSION, opts.program_name);
         return;
     }
