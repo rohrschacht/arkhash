@@ -22,7 +22,7 @@ with sensible data.
 * Multiple loglevels to control verbosity
 * Use multiple threads to increase performance
 * Show progress in verify mode with progress bars
-* Ignore directories from .hfignore in subdir-mode
+* Ignore directories from .arkignore in subdir-mode
 
 ## Dependencies
 arkhash depends on sha1sum, md5sum, etc. to calculate the hashes.
@@ -86,15 +86,15 @@ You can limit the number of threads arkhash will spawn via command line options.
 If you limit the number of threads to 2 in this example, arkhash will operate on 2015 and 2016
 concurrently and go on with the next folder if one of them finishes.
 
-#### .hfignore File
-When the program operates in Update-Subdir mode, it will read a .hfignore text file in the working directory if it exists.
+#### .arkignore File
+When the program operates in Update-Subdir mode, it will read a .arkignore text file in the working directory if it exists.
 You can specify subdirectories that should be ignored by this program. Just list the names of these
 directories line by line.
 
 In the following example the directories "editing-workspace" and "trash" will be ignored on updating
 (and thereby on verifying).
 ```
-.hfignore contents:
+.arkignore contents:
 editing-workspace
 trash
 

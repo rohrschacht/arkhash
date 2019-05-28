@@ -32,7 +32,7 @@ pub fn update_directories(opts: super::util::Options) {
 }
 
 /// Reads all directories in the working directory.
-/// Ignores all directories listed in .hfignore
+/// Ignores all directories listed in .arkignore
 ///
 /// # Arguments
 /// * `opts` Options object containing the working directory
@@ -57,12 +57,12 @@ fn gather_directories_to_process(opts: &super::util::Options) -> Vec<PathBuf> {
     dirs_to_process
 }
 
-/// Reads the .hfignore file and returns a Vector of directories that should be ignored when updating hashes.
+/// Reads the .arkignore file and returns a Vector of directories that should be ignored when updating hashes.
 ///
 /// # Arguments
 /// * `opts` Options object containing the working directory
 fn read_to_ignore(opts: &super::util::Options) -> Vec<PathBuf> {
-    let to_ignore = super::util::read_paths_from_file(&format!("{}{}", &opts.folder, "/.hfignore"));
+    let to_ignore = super::util::read_paths_from_file(&format!("{}{}", &opts.folder, "/.arkignore"));
     let mut to_ignore_prepended = Vec::new();
 
     for path in to_ignore {

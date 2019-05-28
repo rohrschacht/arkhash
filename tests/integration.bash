@@ -161,11 +161,11 @@ rm -f to_check*
 
 
 echo "Preparing Update-Subdir-Ignore..."
-echo "Creating 'ignore' directory and appending it to .hfignore"
+echo "Creating 'ignore' directory and appending it to .arkignore"
 mkdir ignore
 touch ignore/test1
 touch ignore/test2
-echo 'ignore' >> .hfignore
+echo 'ignore' >> .arkignore
 
 echo "Testing Update-Subdir-Ignore..."
 ../arkhash -us
