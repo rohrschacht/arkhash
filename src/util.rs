@@ -55,7 +55,7 @@ impl Options {
     pub fn new(args: Vec<String>) -> Options {
         let mut opts = Options {
             help: false,
-            program_name: "hashfilter".to_string(),
+            program_name: "arkhash".to_string(),
             algorithm: "sha1".to_string(),
             subdir_mode: false,
             mode: Mode::Filter,

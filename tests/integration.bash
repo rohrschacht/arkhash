@@ -10,7 +10,7 @@ cargo build
 if [ $? -ne 0 ]; then
   exit 1;
 fi
-cp target/debug/hashfilter $BASEDIR
+cp target/debug/arkhash $BASEDIR
 
 
 echo "Preparing..."
@@ -38,8 +38,8 @@ dd bs=1M count=500 if=/dev/zero of=secondsecond/big_1
 
 echo "Testing Update..."
 
-echo "hashfilter -u"
-../hashfilter -u
+echo "arkhash -u"
+../arkhash -u
 LINES=$(wc -l sha1sum.txt | cut -d' ' -f1)
 if [[ ! -e sha1sum.txt ]] || [[ ! $LINES -eq 31 ]]; then
   echo "Update FAILED"
@@ -55,8 +55,8 @@ if [[ ! $LINES -eq 30 ]]; then
   exit 1
 fi
 
-echo "hashfilter -u"
-../hashfilter -u
+echo "arkhash -u"
+../arkhash -u
 LINES=$(wc -l sha1sum.txt | cut -d' ' -f1)
 if [[ ! $LINES -eq 31 ]]; then
   echo "Update-2 FAILED"
@@ -67,8 +67,8 @@ fi
 
 echo "Testing Verify..."
 
-echo "hashfilter -v"
-OUTPUT=$(../hashfilter -v)
+echo "arkhash -v"
+OUTPUT=$(../arkhash -v)
 echo -e "$OUTPUT"
 if [[ $OUTPUT =~ .*FAILED.* ]]; then
   echo "Verify FAILED"
@@ -82,8 +82,8 @@ rm -f to_check*
 echo "sed -i 's/./0/' sha1sum.txt"
 sed -i 's/./0/' sha1sum.txt
 
-echo "hashfilter -v"
-OUTPUT=$(../hashfilter -v)
+echo "arkhash -v"
+OUTPUT=$(../arkhash -v)
 echo -e "$OUTPUT"
 if [[ ! $OUTPUT =~ .*FAILED.* ]]; then
   echo "Verify-2 FAILED"
@@ -98,8 +98,8 @@ rm -f to_check*
 
 echo "Testing Update-Subdir..."
 
-echo "hashfilter -us"
-../hashfilter -us
+echo "arkhash -us"
+../arkhash -us
 LINES_TEST=$(wc -l test/sha1sum.txt | cut -d' ' -f1)
 LINES_SECOND=$(wc -l secondsecond/sha1sum.txt | cut -d' ' -f1)
 if [[ ! -e test/sha1sum.txt ]] || [[ ! -e secondsecond/sha1sum.txt ]] || [[ ! $LINES_TEST -eq 15 ]] || [[ ! $LINES_SECOND -eq 16 ]]; then
@@ -116,8 +116,8 @@ if [[ ! $LINES -eq 14 ]]; then
   exit 1
 fi
 
-echo "hashfilter -us"
-../hashfilter -us
+echo "arkhash -us"
+../arkhash -us
 LINES_TEST=$(wc -l test/sha1sum.txt | cut -d' ' -f1)
 LINES_SECOND=$(wc -l secondsecond/sha1sum.txt | cut -d' ' -f1)
 if [[ ! -e test/sha1sum.txt ]] || [[ ! -e secondsecond/sha1sum.txt ]] || [[ ! $LINES_TEST -eq 15 ]] || [[ ! $LINES_SECOND -eq 16 ]]; then
@@ -129,8 +129,8 @@ fi
 
 echo "Testing Verify-Subdir..."
 
-echo "hashfilter -vs"
-OUTPUT=$(../hashfilter -vs)
+echo "arkhash -vs"
+OUTPUT=$(../arkhash -vs)
 echo -e "$OUTPUT"
 FIND=$(find . -iname 'known_good*')
 if [[ $OUTPUT =~ .*FAILED.* ]] || [[  -z $FIND ]]; then
@@ -145,8 +145,8 @@ rm -f to_check*
 echo "sed -i 's/./0/' test/sha1sum.txt"
 sed -i 's/./0/' test/sha1sum.txt
 
-echo "hashfilter -vs"
-OUTPUT=$(../hashfilter -vs)
+echo "arkhash -vs"
+OUTPUT=$(../arkhash -vs)
 echo -e "$OUTPUT"
 FIND=$(find . -iname 'to_check*')
 FIND_LINES=$(echo "$FIND" | wc -l | cut -d' ' -f1)
@@ -168,7 +168,7 @@ touch ignore/test2
 echo 'ignore' >> .hfignore
 
 echo "Testing Update-Subdir-Ignore..."
-../hashfilter -us
+../arkhash -us
 if [[ -e ignore/sha1sum.txt ]]; then
   echo "Update-Subdir-Ignore FAILED"
   ((FAIL_COUNT++))
@@ -180,8 +180,8 @@ echo "Testing Verify-Subdir-Progress..."
 echo "You now need to visually check for uglyness. Feel free to press some Keys while the program is running, as they should not be echoed. Press Enter when you are ready."
 read
 
-echo "hashfilter -vs --loglevel=progress"
-../hashfilter -vs --loglevel=progress
+echo "arkhash -vs --loglevel=progress"
+../arkhash -vs --loglevel=progress
 
 echo -e "\n\nNumber of failed tests: $FAIL_COUNT"
 if [[ ! -z $FAILED_TESTS ]]; then

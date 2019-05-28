@@ -1,5 +1,5 @@
 [package]
-name = "hashfilter"
+name = "arkhash"
 version = "0.2.0"
 authors = ["Tobias Petrich <tobias.petrich@campus.tu-berlin.de>"]
 

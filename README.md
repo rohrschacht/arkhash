@@ -1,4 +1,4 @@
-# hashfilter
+# arkhash
 
 ## About
 This program was designed based on the need of ensuring data integrity of non-changing, archived data.
@@ -25,7 +25,7 @@ with sensible data.
 * Ignore directories from .hfignore in subdir-mode
 
 ## Dependencies
-hashfilter depends on sha1sum, md5sum, etc. to calculate the hashes.
+arkhash depends on sha1sum, md5sum, etc. to calculate the hashes.
 These should already be installed on your gnu/linux system.
 
 ## Usage
@@ -44,7 +44,7 @@ update mode, exposed here to you if you want to do something else with the unhas
 
 Example usage:        
 ```
-find . | hashfilter | xargs -i -d'\n' sha1sum {}
+find . | arkhash | xargs -i -d'\n' sha1sum {}
 ```
 
 ### Update Mode
@@ -65,8 +65,8 @@ file will be stored in a to_check.txt file.
 Progressbars can be activated by using the progress loglevel.
 They also work in subdir mode.
 ```
-hashfilter -v --loglevel=progress
-hashfilter -vs --loglevel=progress
+arkhash -v --loglevel=progress
+arkhash -vs --loglevel=progress
 ```
 
 ### Subdir Mode
@@ -78,12 +78,12 @@ pictures
 ├── 2017
 └── 2018
 ```
-If you enable the subdir mode for the update or verify mode, hashfilter will start 4 threads and
+If you enable the subdir mode for the update or verify mode, arkhash will start 4 threads and
 calculate the hashes in every subdirectory of pictures, or verify them respectively.
 The sha1sum.txt files will be stored in the subdirectories 2015, 2016, etc. .
 This should increase throughput and decrease execution time on multi-core machines.
-You can limit the number of threads hashfilter will spawn via command line options.
-If you limit the number of threads to 2 in this example, hashfilter will operate on 2015 and 2016
+You can limit the number of threads arkhash will spawn via command line options.
+If you limit the number of threads to 2 in this example, arkhash will operate on 2015 and 2016
 concurrently and go on with the next folder if one of them finishes.
 
 #### .hfignore File
@@ -111,7 +111,7 @@ pictures
 ## Help message
 ```
 Usage:
- hashfilter [OPTION] [DIRECTORY]
+ arkhash [OPTION] [DIRECTORY]
 
 Arguments:
  -a, --algo, --algorithm ALGORITHM      uses ALGORITHM to hash files (example: md5, default: sha1)
@@ -126,10 +126,10 @@ Arguments:
 
 ## Planned features
 * Operating on a directory given on the command line
- * Currently hashfilter is mainly implemented and only tested to work on the current working directory
+ * Currently arkhash is mainly implemented and only tested to work on the current working directory
 
 ## Acknowledgements
-This implementation of hashfilter makes use of the following awesome open source projects:
+This implementation of arkhash makes use of the following awesome open source projects:
 * [Rust programming language](https://www.rust-lang.org)
 * [regex](https://crates.io/crates/regex)
 * [chrono](https://crates.io/crates/chrono)
