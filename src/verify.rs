@@ -33,14 +33,12 @@ pub fn verify_directories(opts: super::util::Options) {
         println!("Already checked subdirs: {:?}", already_checked);
     }
 
-    let termios_original = termios::Termios::from_fd(0).unwrap();
-    let mut termios_noecho = termios_original;
-    termios_noecho.c_lflag &= !termios::ECHO;
-
     if !opts.subdir_mode {
         // execute in directory
 
         if opts.loglevel_progress() {
+            let mut termios_noecho = termios::Termios::from_fd(0).unwrap();
+            termios_noecho.c_lflag &= !termios::ECHO;
             termios::tcsetattr(0, termios::TCSANOW, &termios_noecho).unwrap();
             println!();
         }
@@ -60,6 +58,8 @@ pub fn verify_directories(opts: super::util::Options) {
             gather_directories_to_process(&opts, &already_checked);
 
         if opts.loglevel_progress() {
+            let mut termios_noecho = termios::Termios::from_fd(0).unwrap();
+            termios_noecho.c_lflag &= !termios::ECHO;
             termios::tcsetattr(0, termios::TCSANOW, &termios_noecho).unwrap();
             for _ in 0..dirs_to_process.len() {
                 println!();
