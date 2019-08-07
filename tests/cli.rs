@@ -179,6 +179,102 @@ fn verify_modified_test() {
     teardown();
 }
 
+#[test]
+fn update_subdir_test() {
+    let _guard = MTX.lock().unwrap();
+
+    setup();
+
+    // test
+    Assert::main_binary()
+        .with_args(&["-us"])
+        .current_dir("testenvironment")
+        .unwrap();
+
+    let hashfile = fs::File::open("testenvironment/test/sha1sum.txt");
+    if let Ok(hashfile) = hashfile {
+        let mut i = 0;
+        for _ in BufReader::new(hashfile).lines() {
+            i += 1;
+        }
+
+        if i != 13 {
+            teardown();
+            panic!(
+                "hashfile does not contain enough lines. expected: 13, given: {}",
+                i
+            );
+        }
+    } else {
+        teardown();
+        panic!("arkhash did not create the hashfile!");
+    }
+
+    let hashfile = fs::File::open("testenvironment/secondsecond/sha1sum.txt");
+    if let Ok(hashfile) = hashfile {
+        let mut i = 0;
+        for _ in BufReader::new(hashfile).lines() {
+            i += 1;
+        }
+
+        if i != 14 {
+            teardown();
+            panic!(
+                "hashfile does not contain enough lines. expected: 14, given: {}",
+                i
+            );
+        }
+    } else {
+        teardown();
+        panic!("arkhash did not create the hashfile!");
+    }
+
+    Assert::main_binary()
+        .with_args(&["-us"])
+        .current_dir("testenvironment")
+        .unwrap();
+
+    let hashfile = fs::File::open("testenvironment/test/sha1sum.txt");
+    if let Ok(hashfile) = hashfile {
+        let mut i = 0;
+        for _ in BufReader::new(hashfile).lines() {
+            i += 1;
+        }
+
+        if i != 13 {
+            teardown();
+            panic!(
+                "arkhash added new lines to the hashfile on update. expected: 13, given: {}",
+                i
+            );
+        }
+    } else {
+        teardown();
+        panic!("arkhash did not create the hashfile!");
+    }
+
+    let hashfile = fs::File::open("testenvironment/secondsecond/sha1sum.txt");
+    if let Ok(hashfile) = hashfile {
+        let mut i = 0;
+        for _ in BufReader::new(hashfile).lines() {
+            i += 1;
+        }
+
+        if i != 14 {
+            teardown();
+            panic!(
+                "arkhash added new lines to the hashfile on update. expected: 14, given: {}",
+                i
+            );
+        }
+    } else {
+        teardown();
+        panic!("arkhash did not create the hashfile!");
+    }
+
+    teardown();
+}
+
 fn setup() {
     fs::create_dir("testenvironment").unwrap();
     fs::create_dir("testenvironment/test").unwrap();
