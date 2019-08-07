@@ -31,76 +31,6 @@ fn template_test() {
 }
 
 #[test]
-fn verify_modified_test() {
-    let _guard = MTX.lock().unwrap();
-
-    setup();
-
-    // test
-    Assert::main_binary()
-        .with_args(&["-u"])
-        .current_dir("testenvironment")
-        .unwrap();
-
-    let hashfile = fs::File::open("testenvironment/sha1sum.txt");
-    let mut data = String::new();
-    if let Ok(mut hashfile) = hashfile {
-        hashfile.read_to_string(&mut data).unwrap();
-    } else {
-        teardown();
-        panic!("arkhash did not create the hashfile!");
-    }
-
-    let mut first = true;
-    let mut modified = String::new();
-    for line in data.split("\n") {
-        if first {
-            let mut modline = String::from(line);
-            modline.remove(0);
-            modline.insert(0, '0');
-            modified.push_str(&format!("{}\n", modline));
-            first = false;
-        } else {
-            modified.push_str(&format!("{}\n", line));
-        }
-    }
-
-    let mut hashfile = fs::File::create("testenvironment/sha1sum.txt").unwrap();
-    hashfile.write(modified.as_bytes()).unwrap();
-
-    Assert::main_binary()
-        .with_args(&["-v"])
-        .current_dir("testenvironment")
-        .stdout()
-        .contains("FAILED")
-        .unwrap();
-
-    teardown();
-}
-
-#[test]
-fn verify_test() {
-    let _guard = MTX.lock().unwrap();
-
-    setup();
-
-    // test
-    Assert::main_binary()
-        .with_args(&["-u"])
-        .current_dir("testenvironment")
-        .unwrap();
-
-    Assert::main_binary()
-        .with_args(&["-v"])
-        .current_dir("testenvironment")
-        .stdout()
-        .doesnt_contain("FAILED")
-        .unwrap();
-
-    teardown();
-}
-
-#[test]
 fn update_test() {
     let _guard = MTX.lock().unwrap();
 
@@ -175,6 +105,76 @@ fn update_test() {
             );
         }
     }
+
+    teardown();
+}
+
+#[test]
+fn verify_test() {
+    let _guard = MTX.lock().unwrap();
+
+    setup();
+
+    // test
+    Assert::main_binary()
+        .with_args(&["-u"])
+        .current_dir("testenvironment")
+        .unwrap();
+
+    Assert::main_binary()
+        .with_args(&["-v"])
+        .current_dir("testenvironment")
+        .stdout()
+        .doesnt_contain("FAILED")
+        .unwrap();
+
+    teardown();
+}
+
+#[test]
+fn verify_modified_test() {
+    let _guard = MTX.lock().unwrap();
+
+    setup();
+
+    // test
+    Assert::main_binary()
+        .with_args(&["-u"])
+        .current_dir("testenvironment")
+        .unwrap();
+
+    let hashfile = fs::File::open("testenvironment/sha1sum.txt");
+    let mut data = String::new();
+    if let Ok(mut hashfile) = hashfile {
+        hashfile.read_to_string(&mut data).unwrap();
+    } else {
+        teardown();
+        panic!("arkhash did not create the hashfile!");
+    }
+
+    let mut first = true;
+    let mut modified = String::new();
+    for line in data.split("\n") {
+        if first {
+            let mut modline = String::from(line);
+            modline.remove(0);
+            modline.insert(0, '0');
+            modified.push_str(&format!("{}\n", modline));
+            first = false;
+        } else {
+            modified.push_str(&format!("{}\n", line));
+        }
+    }
+
+    let mut hashfile = fs::File::create("testenvironment/sha1sum.txt").unwrap();
+    hashfile.write(modified.as_bytes()).unwrap();
+
+    Assert::main_binary()
+        .with_args(&["-v"])
+        .current_dir("testenvironment")
+        .stdout()
+        .contains("FAILED")
+        .unwrap();
 
     teardown();
 }
