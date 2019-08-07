@@ -373,6 +373,40 @@ fn verify_subdir_modified_test() {
     teardown();
 }
 
+#[test]
+fn update_subdir_ignore_test() {
+    let _guard = MTX.lock().unwrap();
+
+    setup();
+    fs::create_dir("testenvironment/ignore").unwrap();
+    let mut f = fs::File::create("testenvironment/ignore/little_1").unwrap();
+    f.write_all(b"Small file").unwrap();
+    let mut f = fs::File::create("testenvironment/ignore/little_2").unwrap();
+    f.write_all(b"Small file").unwrap();
+    let mut f = fs::File::create("testenvironment/.arkignore").unwrap();
+    f.write_all(b"ignore").unwrap();
+
+    // test
+    Assert::main_binary()
+        .with_args(&["-us"])
+        .current_dir("testenvironment")
+        .unwrap();
+
+    let mut hashsum_file = false;
+    for entry in fs::read_dir("testenvironment/ignore").unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_file() {
+            if path.to_str().unwrap() == "sha1sum.txt" {
+                hashsum_file = true;
+            }
+        }
+    }
+
+    assert_ne!(hashsum_file, true);
+
+    teardown();
+}
+
 fn setup() {
     fs::create_dir("testenvironment").unwrap();
     fs::create_dir("testenvironment/test").unwrap();
