@@ -1,13 +1,8 @@
 extern crate assert_cli;
 extern crate regex;
-// extern crate assert_cmd;
-// extern crate predicates;
 
 use assert_cli::*;
 use regex::Regex;
-// use assert_cmd::prelude::*;
-// use predicates::prelude::*;
-// use std::process::Command;
 
 use std::fs;
 use std::io::prelude::*;
