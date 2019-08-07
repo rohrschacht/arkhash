@@ -58,11 +58,11 @@ fn verify_modified_test() {
             let mut modline = String::from(line);
             modline.remove(0);
             modline.insert(0, '0');
-            modified.push_str(&modline);
+            modified.push_str(&format!("{}\n", modline));
             first = false;
+        } else {
+            modified.push_str(&format!("{}\n", line));
         }
-
-        modified.push_str(line);
     }
 
     let mut hashfile = fs::File::create("testenvironment/sha1sum.txt").unwrap();
