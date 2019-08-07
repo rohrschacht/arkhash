@@ -396,7 +396,7 @@ fn update_subdir_ignore_test() {
     for entry in fs::read_dir("testenvironment/ignore").unwrap() {
         let path = entry.unwrap().path();
         if path.is_file() {
-            if path.to_str().unwrap() == "sha1sum.txt" {
+            if path.to_str().unwrap().contains("sha1sum.txt") {
                 hashsum_file = true;
             }
         }
