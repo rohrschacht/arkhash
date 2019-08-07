@@ -1,8 +1,10 @@
 extern crate assert_cli;
+extern crate regex;
 // extern crate assert_cmd;
 // extern crate predicates;
 
 use assert_cli::*;
+use regex::Regex;
 // use assert_cmd::prelude::*;
 // use predicates::prelude::*;
 // use std::process::Command;
@@ -271,6 +273,41 @@ fn update_subdir_test() {
         teardown();
         panic!("arkhash did not create the hashfile!");
     }
+
+    teardown();
+}
+
+#[test]
+fn verify_subdir_test() {
+    let _guard = MTX.lock().unwrap();
+
+    setup();
+
+    // test
+    Assert::main_binary()
+        .with_args(&["-us"])
+        .current_dir("testenvironment")
+        .unwrap();
+
+    Assert::main_binary()
+        .with_args(&["-vs"])
+        .current_dir("testenvironment")
+        .stdout()
+        .doesnt_contain("FAILED")
+        .unwrap();
+
+    let mut known_good_found = false;
+    let re = Regex::new(r"known_good.*").unwrap();
+    for entry in fs::read_dir("testenvironment").unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_file() {
+            if re.is_match(path.to_str().unwrap()) {
+                known_good_found = true;
+            }
+        }
+    }
+
+    assert!(known_good_found);
 
     teardown();
 }
