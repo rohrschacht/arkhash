@@ -312,6 +312,67 @@ fn verify_subdir_test() {
     teardown();
 }
 
+#[test]
+fn verify_subdir_modified_test() {
+    let _guard = MTX.lock().unwrap();
+
+    setup();
+
+    // test
+    Assert::main_binary()
+        .with_args(&["-us"])
+        .current_dir("testenvironment")
+        .unwrap();
+
+    let hashfile = fs::File::open("testenvironment/test/sha1sum.txt");
+    let mut data = String::new();
+    if let Ok(mut hashfile) = hashfile {
+        hashfile.read_to_string(&mut data).unwrap();
+    } else {
+        teardown();
+        panic!("arkhash did not create the hashfile!");
+    }
+
+    let mut first = true;
+    let mut modified = String::new();
+    for line in data.split("\n") {
+        if first {
+            let mut modline = String::from(line);
+            modline.remove(0);
+            modline.insert(0, '0');
+            modified.push_str(&format!("{}\n", modline));
+            first = false;
+        } else {
+            modified.push_str(&format!("{}\n", line));
+        }
+    }
+
+    let mut hashfile = fs::File::create("testenvironment/test/sha1sum.txt").unwrap();
+    hashfile.write(modified.as_bytes()).unwrap();
+
+    Assert::main_binary()
+        .with_args(&["-vs"])
+        .current_dir("testenvironment")
+        .stdout()
+        .contains("FAILED")
+        .unwrap();
+
+    let mut to_check_occurences = 0;
+    let re = Regex::new(r"to_check.*").unwrap();
+    for entry in fs::read_dir("testenvironment").unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_file() {
+            if re.is_match(path.to_str().unwrap()) {
+                to_check_occurences += 1;
+            }
+        }
+    }
+
+    assert_eq!(to_check_occurences, 2);
+
+    teardown();
+}
+
 fn setup() {
     fs::create_dir("testenvironment").unwrap();
     fs::create_dir("testenvironment/test").unwrap();
