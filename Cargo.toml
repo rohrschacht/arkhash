@@ -6,5 +6,11 @@ authors = ["Tobias Petrich <tobias.petrich@campus.tu-berlin.de>"]
 [dependencies]
 regex = "1"
 chrono = "0.4"
-threadpool = "1.0"
-termios = "0.3.1"
+threadpool = "1"
+termios = "0.3"
+
+[dev-dependencies]
+assert_cmd = "0.11"
+predicates = "1"
+assert_cli = "0.6"
+lazy_static = "1"
