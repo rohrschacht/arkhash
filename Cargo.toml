@@ -13,6 +13,8 @@ sha-1 = "0.8.1"
 md-5 = "0.8.0"
 sha2 = "0.8.0"
 hex = "0.3.2"
+crossbeam-deque = "0.7.1"
+num_cpus = "1.10.1"
 
 [dev-dependencies]
 assert_cmd = "0.11"
