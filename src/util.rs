@@ -1,12 +1,21 @@
 //! This module describes a set of utilities that will be used throughout the other modules
 
+extern crate digest;
+extern crate hex;
+extern crate md5;
 extern crate regex;
+extern crate sha1;
+extern crate sha2;
 
 use self::regex::Regex;
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Error, Read};
 use std::path::PathBuf;
-use std::process::Command;
+
+use self::digest::{Digest, DynDigest};
+use self::md5::Md5;
+use self::sha1::Sha1;
+use self::sha2::{Sha224, Sha256, Sha384, Sha512};
 
 /// The mode the program will operate in
 #[derive(Debug, Clone)]
@@ -200,7 +209,7 @@ pub fn regex_from_opts(opts: &Options) -> Result<Regex, &'static str> {
     }
 }
 
-/// Call _algorithm_sum with the path of a file to get the hashsum.
+/// Imitate _algorithm_sum with the path of a file to get the hashsum.
 ///
 /// # Arguments
 ///
@@ -212,12 +221,30 @@ pub fn regex_from_opts(opts: &Options) -> Result<Regex, &'static str> {
 ///
 /// A String containing the output of the _algorithm_sum command.
 pub fn calculate_hash(path: String, workdir: &PathBuf, opts: &super::util::Options) -> String {
-    let output = Command::new(format!("{}sum", opts.algorithm))
-        .arg(path)
-        .current_dir(workdir)
-        .output()
-        .unwrap();
-    String::from_utf8_lossy(&output.stdout).to_string()
+    let mut file = fs::File::open(&format!("{}/{}", workdir.to_str().unwrap(), path)).unwrap();
+    const BUFFER_SIZE: usize = 100;
+    let mut buffer = [0; BUFFER_SIZE];
+
+    let mut hasher = match opts.algorithm.as_ref() {
+        "sha1" => Box::new(Sha1::new()) as Box<DynDigest>,
+        "md5" => Box::new(Md5::new()) as Box<DynDigest>,
+        "sha224" => Box::new(Sha224::new()) as Box<DynDigest>,
+        "sha256" => Box::new(Sha256::new()) as Box<DynDigest>,
+        "sha384" => Box::new(Sha384::new()) as Box<DynDigest>,
+        "sha512" => Box::new(Sha512::new()) as Box<DynDigest>,
+        _ => panic!("Algorithm not recognized"),
+    };
+
+    loop {
+        let n = file.read(&mut buffer).unwrap();
+        hasher.input(&buffer[0..n]);
+
+        if n == 0 || n < BUFFER_SIZE {
+            break;
+        }
+    }
+
+    format!("{}  {}\n", hex::encode(hasher.result()), path)
 }
 
 /// Read paths line by line from a file and return them in a Vector

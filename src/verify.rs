@@ -9,7 +9,6 @@ use std::borrow::Borrow;
 use std::fs::{self, OpenOptions};
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::thread;
 
@@ -364,58 +363,54 @@ fn verify_directory_oneshot(
     opts: &Arc<super::util::Options>,
     failed_paths: &mut Vec<String>,
 ) -> Result<(), io::Error> {
-    let child = Command::new(format!("{}sum", opts.algorithm))
-        .arg("-c")
-        .arg("--quiet")
-        .arg(format!("{}sum.txt", opts.algorithm))
-        .current_dir(&workdir)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn();
+    let file_path_re = match super::util::regex_from_opts(&opts) {
+        Ok(re) => re,
+        Err(e) => panic!(e),
+    };
+    let mut success = true;
 
-    if let Ok(mut child) = child {
-        // The _algorithm_sum command can be successfully executed in workdir
+    let file = match OpenOptions::new()
+        .read(true)
+        .append(true)
+        .create(true)
+        .open(format!(
+            "{}/{}sum.txt",
+            workdir.to_str().unwrap(),
+            opts.algorithm
+        )) {
+        Ok(f) => f,
+        Err(e) => panic!(e),
+    };
 
-        let reader = BufReader::new(child.stdout.take().unwrap());
+    for line in BufReader::new(file).lines() {
+        if let Ok(line) = line {
+            if let Some(captures) = file_path_re.captures(&line) {
+                let hash = &captures[1];
+                let path = &captures[2];
 
-        for line in reader.lines() {
-            match line {
-                Err(_) => continue,
-                Ok(line) => {
-                    if opts.loglevel_info() {
-                        let now: DateTime<chrono::Local> = chrono::Local::now();
-                        println!("[{}] {}: {}", now, workdir.to_str().unwrap(), line);
+                let mut new_hash = super::util::calculate_hash(String::from(path), &workdir, &opts);
+                new_hash.pop();
+                if let Some(new_captures) = file_path_re.captures(&new_hash) {
+                    let new_hash = &new_captures[1];
+                    if new_hash != hash {
+                        if opts.loglevel_info() {
+                            let now: DateTime<chrono::Local> = chrono::Local::now();
+                            println!("[{}] {}: {}", now, workdir.to_str().unwrap(), line);
+                        }
+                        failed_paths.push(String::from(path));
+                        success = false;
                     }
-
-                    failed_paths.push(line);
                 }
             }
         }
+    }
 
-        let exit_status = child.wait().unwrap();
-
-        if exit_status.success() {
-            Ok(())
-        } else {
-            Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Some files changed unexpectedly",
-            ))
-        }
+    if success {
+        Ok(())
     } else {
-        // The _algorithm_sum command can NOT be successfully executed in workdir
-        if opts.loglevel_info() {
-            let now = chrono::Local::now();
-            println!(
-                "[{}] Directory {}: Permission Denied",
-                now,
-                workdir.to_str().unwrap()
-            );
-        }
-
         Err(io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            "Child could not be spawned in workdir",
+            io::ErrorKind::InvalidData,
+            "Some files changed unexpectedly",
         ))
     }
 }
