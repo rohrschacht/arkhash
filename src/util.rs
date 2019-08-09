@@ -1,5 +1,6 @@
 //! This module describes a set of utilities that will be used throughout the other modules
 
+extern crate crossbeam_deque;
 extern crate digest;
 extern crate hex;
 extern crate md5;
@@ -17,6 +18,12 @@ use self::md5::Md5;
 use self::sha1::Sha1;
 use self::sha2::{Sha224, Sha256, Sha384, Sha512};
 
+use self::crossbeam_deque::{Injector, Steal};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::Sender;
+use std::sync::Arc;
+use std::thread::JoinHandle;
+
 /// The mode the program will operate in
 #[derive(Debug, Clone)]
 pub enum Mode {
@@ -32,6 +39,13 @@ pub enum LogLevel {
     Info,
     Progress,
     Debug,
+}
+
+pub struct HashTask {
+    pub path: String,
+    pub workdir: PathBuf,
+    pub opts: Arc<Options>,
+    pub result_chan: Sender<String>,
 }
 
 /// A single structure that gets constructed by commandline arguments and describes the behavior of the program
@@ -245,6 +259,41 @@ pub fn calculate_hash(path: String, workdir: &PathBuf, opts: &super::util::Optio
     }
 
     format!("{}  {}\n", hex::encode(hasher.result()), path)
+}
+
+pub fn execute_workers(
+    num_threads: usize,
+    q: Arc<Injector<super::util::HashTask>>,
+    producer_finished: Arc<AtomicBool>,
+    worker_handles: &mut Vec<JoinHandle<()>>,
+) {
+    for _ in 0..num_threads {
+        let myq = Arc::clone(&q);
+        let myp = Arc::clone(&producer_finished);
+
+        let handle = std::thread::spawn(move || loop {
+            let task = myq.steal();
+
+            match task {
+                Steal::Success(task) => {
+                    let hashline =
+                        super::util::calculate_hash(task.path, &task.workdir, &task.opts);
+                    task.result_chan.send(hashline).unwrap();
+                }
+                Steal::Retry => {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Steal::Empty => {
+                    if myp.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+            }
+        });
+
+        worker_handles.push(handle);
+    }
 }
 
 /// Read paths line by line from a file and return them in a Vector
