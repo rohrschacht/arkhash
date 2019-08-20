@@ -241,12 +241,12 @@ pub fn calculate_hash(path: String, workdir: &PathBuf, opts: &super::util::Optio
     let mut buffer = [0; BUFFER_SIZE];
 
     let mut hasher = match opts.algorithm.as_ref() {
-        "sha1" => Box::new(Sha1::new()) as Box<DynDigest>,
-        "md5" => Box::new(Md5::new()) as Box<DynDigest>,
-        "sha224" => Box::new(Sha224::new()) as Box<DynDigest>,
-        "sha256" => Box::new(Sha256::new()) as Box<DynDigest>,
-        "sha384" => Box::new(Sha384::new()) as Box<DynDigest>,
-        "sha512" => Box::new(Sha512::new()) as Box<DynDigest>,
+        "sha1" => Box::new(Sha1::new()) as Box<dyn DynDigest>,
+        "md5" => Box::new(Md5::new()) as Box<dyn DynDigest>,
+        "sha224" => Box::new(Sha224::new()) as Box<dyn DynDigest>,
+        "sha256" => Box::new(Sha256::new()) as Box<dyn DynDigest>,
+        "sha384" => Box::new(Sha384::new()) as Box<dyn DynDigest>,
+        "sha512" => Box::new(Sha512::new()) as Box<dyn DynDigest>,
         _ => panic!("Algorithm not recognized"),
     };
 
@@ -277,8 +277,7 @@ pub fn execute_workers(
 
             match task {
                 Steal::Success(task) => {
-                    let hashline =
-                        calculate_hash(task.path, &task.workdir, &task.opts);
+                    let hashline = calculate_hash(task.path, &task.workdir, &task.opts);
                     task.result_chan.send((hashline, task.cmp)).unwrap();
                 }
                 Steal::Retry => {
