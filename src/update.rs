@@ -187,6 +187,7 @@ fn update_hashsums(
                     path: line,
                     workdir: PathBuf::from(path),
                     opts: Arc::clone(&opts),
+                    cmp: String::new(),
                     result_chan: sender.clone(),
                 };
 
@@ -195,7 +196,7 @@ fn update_hashsums(
 
             drop(sender);
 
-            for hashline in receiver {
+            for (hashline, _) in receiver {
                 if let Err(e) = write!(file, "{}", hashline) {
                     eprintln!("Error writing to file: {}", e);
                 }

@@ -1,9 +1,10 @@
 //! This module implements the verify mode
 
 extern crate chrono;
+extern crate crossbeam_deque;
+extern crate num_cpus;
 extern crate regex;
 extern crate termios;
-extern crate threadpool;
 
 use std::borrow::Borrow;
 use std::fs::{self, OpenOptions};
@@ -14,7 +15,9 @@ use std::thread;
 
 use self::chrono::{DateTime, Datelike};
 
-use self::threadpool::ThreadPool;
+use self::crossbeam_deque::Injector;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::channel;
 
 /// Verifies the integrity of some directories
 ///
@@ -41,15 +44,44 @@ pub fn verify_directories(opts: super::util::Options) {
             termios::tcsetattr(0, termios::TCSANOW, &termios_noecho).unwrap();
             println!();
         }
+        let mut worker_handles = Vec::new();
+        let q = Arc::new(Injector::new());
+        let producer_finished = Arc::new(AtomicBool::new(false));
+        let num_threads = match opts.num_threads {
+            0 => num_cpus::get(),
+            _ => opts.num_threads,
+        };
 
-        verify_directory(
-            &PathBuf::from(&opts.folder),
-            Arc::new(known_good_path),
-            Arc::new(to_check_path),
-            Arc::new(opts),
-            1,
-            0,
+        let opts = Arc::new(opts);
+        let workdir = PathBuf::from(&opts.folder);
+        let myq = Arc::clone(&q);
+
+        let handle = thread::spawn(move || {
+            verify_directory(
+                &workdir,
+                Arc::new(known_good_path),
+                Arc::new(to_check_path),
+                opts,
+                1,
+                0,
+                myq,
+            );
+        });
+
+        super::util::execute_workers(
+            num_threads,
+            Arc::clone(&q),
+            Arc::clone(&producer_finished),
+            &mut worker_handles,
         );
+
+        handle.join().unwrap();
+
+        producer_finished.store(true, Ordering::Relaxed);
+
+        for handle in worker_handles {
+            handle.join().unwrap();
+        }
     } else {
         // iterate over subdirs and spawn verify_directory threads
 
@@ -65,22 +97,13 @@ pub fn verify_directories(opts: super::util::Options) {
             }
         }
 
-        match opts.num_threads {
-            0 => execute_threads_unlimited(
-                opts,
-                known_good_path,
-                to_check_path,
-                dirs_to_process,
-                longest_folder,
-            ),
-            _ => execute_threads_limited(
-                opts,
-                known_good_path,
-                to_check_path,
-                dirs_to_process,
-                longest_folder,
-            ),
-        }
+        execute_threads_subdir(
+            opts,
+            known_good_path,
+            to_check_path,
+            dirs_to_process,
+            longest_folder,
+        )
     }
 }
 
@@ -134,21 +157,29 @@ fn gather_directories_to_process(
 /// * `to_check_path` Path to the text file containing all checked and bad directories
 /// * `dirs_to_process` Vector of directory paths that have to be checked
 /// * `longest_folder` Number of characters in the name of the longest folder
-fn execute_threads_unlimited(
+fn execute_threads_subdir(
     opts: super::util::Options,
     known_good_path: String,
     to_check_path: String,
     dirs_to_process: Vec<PathBuf>,
     longest_folder: usize,
 ) {
-    let mut thread_handles = Vec::new();
+    let mut producer_handles = Vec::new();
+    let mut worker_handles = Vec::new();
     let mut print_line = 1;
     let opts = Arc::new(opts);
     let known_good_path = Arc::new(known_good_path);
     let to_check_path = Arc::new(to_check_path);
+    let q = Arc::new(Injector::new());
+    let producer_finished = Arc::new(AtomicBool::new(false));
+    let num_threads = match opts.num_threads {
+        0 => num_cpus::get(),
+        _ => opts.num_threads,
+    };
 
     for entry in dirs_to_process {
         let opts = Arc::clone(&opts);
+        let myq = Arc::clone(&q);
         let known_good_path = Arc::clone(&known_good_path);
         let to_check_path = Arc::clone(&to_check_path);
 
@@ -160,61 +191,31 @@ fn execute_threads_unlimited(
                 opts,
                 print_line,
                 longest_folder,
+                myq,
             );
         });
-        thread_handles.push(handle);
+
+        producer_handles.push(handle);
 
         print_line += 1;
     }
 
-    for handle in thread_handles {
+    super::util::execute_workers(
+        num_threads,
+        Arc::clone(&q),
+        Arc::clone(&producer_finished),
+        &mut worker_handles,
+    );
+
+    for handle in producer_handles {
         handle.join().unwrap();
     }
-}
 
-/// Starts a thread for every directory in dirs_to_process and launches opts.num_threads of them in parallel.
-/// When a thread finished its work, the next one will be launched.
-/// Waits for them to finish.
-///
-/// # Arguments
-/// * `opts` Options object
-/// * `known_good_path` Path to the text file containing all checked and good directories
-/// * `to_check_path` Path to the text file containing all checked and bad directories
-/// * `dirs_to_process` Vector of directory paths that have to be checked
-/// * `longest_folder` Number of characters in the name of the longest folder
-fn execute_threads_limited(
-    opts: super::util::Options,
-    known_good_path: String,
-    to_check_path: String,
-    dirs_to_process: Vec<PathBuf>,
-    longest_folder: usize,
-) {
-    let pool = ThreadPool::new(opts.num_threads);
-    let mut print_line = 1;
-    let opts = Arc::new(opts);
-    let known_good_path = Arc::new(known_good_path);
-    let to_check_path = Arc::new(to_check_path);
+    producer_finished.store(true, Ordering::Relaxed);
 
-    for entry in dirs_to_process {
-        let opts = Arc::clone(&opts);
-        let known_good_path = Arc::clone(&known_good_path);
-        let to_check_path = Arc::clone(&to_check_path);
-
-        pool.execute(move || {
-            verify_directory(
-                &entry,
-                known_good_path,
-                to_check_path,
-                opts,
-                print_line,
-                longest_folder,
-            );
-        });
-
-        print_line += 1;
+    for handle in worker_handles {
+        handle.join().unwrap();
     }
-
-    pool.join();
 }
 
 /// Verifies the integrity of a directory
@@ -234,6 +235,7 @@ fn verify_directory(
     opts: Arc<super::util::Options>,
     print_line: u32,
     longest_folder: usize,
+    myq: Arc<Injector<super::util::HashTask>>,
 ) {
     if opts.loglevel_info() {
         let now: DateTime<chrono::Local> = chrono::Local::now();
@@ -253,9 +255,10 @@ fn verify_directory(
             print_line,
             &mut failed_paths,
             longest_folder,
+            myq,
         )
     } else {
-        verify_directory_oneshot(&workdir, &opts, &mut failed_paths)
+        verify_directory_oneshot(&workdir, &opts, &mut failed_paths, myq)
     };
 
     if success.is_ok() {
@@ -362,6 +365,7 @@ fn verify_directory_oneshot(
     workdir: &PathBuf,
     opts: &Arc<super::util::Options>,
     failed_paths: &mut Vec<String>,
+    myq: Arc<Injector<super::util::HashTask>>,
 ) -> Result<(), io::Error> {
     let file_path_re = match super::util::regex_from_opts(&opts) {
         Ok(re) => re,
@@ -382,25 +386,40 @@ fn verify_directory_oneshot(
         Err(e) => panic!(e),
     };
 
+    let (sender, receiver) = channel();
+
     for line in BufReader::new(file).lines() {
         if let Ok(line) = line {
             if let Some(captures) = file_path_re.captures(&line) {
                 let hash = &captures[1];
                 let path = &captures[2];
 
-                let mut new_hash = super::util::calculate_hash(String::from(path), &workdir, &opts);
-                new_hash.pop();
-                if let Some(new_captures) = file_path_re.captures(&new_hash) {
-                    let new_hash = &new_captures[1];
-                    if new_hash != hash {
-                        if opts.loglevel_info() {
-                            let now: DateTime<chrono::Local> = chrono::Local::now();
-                            println!("[{}] {}: {}", now, workdir.to_str().unwrap(), line);
-                        }
-                        failed_paths.push(String::from(path));
-                        success = false;
-                    }
+                let task = super::util::HashTask {
+                    path: String::from(path),
+                    workdir: PathBuf::from(workdir),
+                    opts: Arc::clone(&opts),
+                    cmp: String::from(hash),
+                    result_chan: sender.clone(),
+                };
+
+                myq.push(task);
+            }
+        }
+    }
+
+    drop(sender);
+
+    for (mut hashline, cmp) in receiver {
+        hashline.pop();
+        if let Some(new_captures) = file_path_re.captures(&hashline) {
+            let new_hash = &new_captures[1];
+            if new_hash != cmp {
+                if opts.loglevel_info() {
+                    let now: DateTime<chrono::Local> = chrono::Local::now();
+                    println!("[{}] {}: {}", now, workdir.to_str().unwrap(), hashline);
                 }
+                failed_paths.push(String::from(&new_captures[2]));
+                success = false;
             }
         }
     }
@@ -430,6 +449,7 @@ fn verify_directory_with_progressbar(
     print_line: u32,
     failed_paths: &mut Vec<String>,
     longest_folder: usize,
+    myq: Arc<Injector<super::util::HashTask>>,
 ) -> Result<(), io::Error> {
     let mut processed_bytes: u64 = 0;
     let file_path_re = match super::util::regex_from_opts(&opts) {
@@ -460,35 +480,54 @@ fn verify_directory_with_progressbar(
         Err(e) => panic!(e),
     };
 
+    let (sender, receiver) = channel();
+
     for line in BufReader::new(file).lines() {
         if let Ok(line) = line {
             if let Some(captures) = file_path_re.captures(&line) {
                 let hash = &captures[1];
                 let path = &captures[2];
 
-                let mut new_hash = super::util::calculate_hash(String::from(path), &workdir, &opts);
-                new_hash.pop();
-                if let Some(new_captures) = file_path_re.captures(&new_hash) {
-                    let new_hash = &new_captures[1];
-                    if new_hash != hash {
-                        failed_paths.push(String::from(path));
-                    }
-                }
+                let task = super::util::HashTask {
+                    path: String::from(path),
+                    workdir: PathBuf::from(workdir),
+                    opts: Arc::clone(&opts),
+                    cmp: String::from(hash),
+                    result_chan: sender.clone(),
+                };
 
-                let metadata = fs::metadata(format!("{}/{}", workdir.to_str().unwrap(), path));
-                if let Ok(metadata) = metadata {
-                    processed_bytes += metadata.len();
-                }
-
-                print_progress(
-                    all_bytes,
-                    processed_bytes,
-                    print_line,
-                    &workdir,
-                    longest_folder,
-                )?;
+                myq.push(task);
             }
         }
+    }
+
+    drop(sender);
+
+    for (mut hashline, cmp) in receiver {
+        hashline.pop();
+        if let Some(new_captures) = file_path_re.captures(&hashline) {
+            let new_hash = &new_captures[1];
+            if new_hash != cmp {
+                failed_paths.push(String::from(&new_captures[2]));
+            }
+
+            let metadata = fs::metadata(format!(
+                "{}/{}",
+                workdir.to_str().unwrap(),
+                &new_captures[2]
+            ));
+            if let Ok(metadata) = metadata {
+                processed_bytes += metadata.len();
+            }
+        }
+
+        print_progress(
+            all_bytes,
+            processed_bytes,
+            print_line,
+            &workdir,
+            longest_folder,
+        )?;
     }
 
     if failed_paths.is_empty() {
