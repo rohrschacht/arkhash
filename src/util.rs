@@ -45,7 +45,8 @@ pub struct HashTask {
     pub path: String,
     pub workdir: PathBuf,
     pub opts: Arc<Options>,
-    pub result_chan: Sender<String>,
+    pub cmp: String,
+    pub result_chan: Sender<(String, String)>,
 }
 
 /// A single structure that gets constructed by commandline arguments and describes the behavior of the program
@@ -277,8 +278,8 @@ pub fn execute_workers(
             match task {
                 Steal::Success(task) => {
                     let hashline =
-                        super::util::calculate_hash(task.path, &task.workdir, &task.opts);
-                    task.result_chan.send(hashline).unwrap();
+                        calculate_hash(task.path, &task.workdir, &task.opts);
+                    task.result_chan.send((hashline, task.cmp)).unwrap();
                 }
                 Steal::Retry => {
                     std::thread::sleep(std::time::Duration::from_millis(10));
