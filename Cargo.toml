@@ -1,12 +1,11 @@
 [package]
 name = "arkhash"
-version = "1.0.0"
+version = "1.1.0"
 authors = ["Tobias Petrich <tobias.petrich@campus.tu-berlin.de>"]
 
 [dependencies]
 regex = "1"
 chrono = "0.4"
-threadpool = "1"
 termios = "0.3"
 digest = "0.8.1"
 sha-1 = "0.8.1"
