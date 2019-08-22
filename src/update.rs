@@ -164,6 +164,7 @@ fn execute_threads_subdir(opts: super::util::Options, dirs_to_process: Vec<PathB
 ///
 /// * `path` The path to the directory that is going to be updated
 /// * `opts` An Options object containing information about the program behavior
+/// * `myq` An Injector queue that is used to push the generated hashtasks to the workers and receive the results
 fn update_hashsums(
     path: &PathBuf,
     opts: Arc<super::util::Options>,

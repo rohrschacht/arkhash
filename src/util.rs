@@ -41,11 +41,17 @@ pub enum LogLevel {
     Debug,
 }
 
+/// A structure that defines everything needed to hash a requested file and return the result
 pub struct HashTask {
+    /// Path to the file that should be hashed
     pub path: String,
+    /// The desired working directory of the worker thread
     pub workdir: PathBuf,
+    /// A reference to an Options struct containing various parameters
     pub opts: Arc<Options>,
+    /// A string containing the hash that the file should match
     pub cmp: String,
+    /// A channel to return the calculated hash and cmp to the task generator
     pub result_chan: Sender<(String, String)>,
 }
 
@@ -262,6 +268,14 @@ pub fn calculate_hash(path: String, workdir: &PathBuf, opts: &super::util::Optio
     format!("{}  {}\n", hex::encode(hasher.result()), path)
 }
 
+/// Starts a number of worker threads ready for hashing files.
+///
+/// # Arguments
+///
+/// * `num_threads` Number of worker threads to start
+/// * `q` Reference to the Injector that will carry the HashTask objects
+/// * `produced_finished` Reference to a central boolean that indicates that no new HashTasks will be pushed into q
+/// * `worker_handles` A mutable reference to a vector of thread handles, in which the handles to the worker threads will be stored
 pub fn execute_workers(
     num_threads: usize,
     q: Arc<Injector<super::util::HashTask>>,
