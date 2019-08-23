@@ -170,6 +170,10 @@ fn update_hashsums(
     opts: Arc<super::util::Options>,
     myq: Arc<Injector<super::util::HashTask>>,
 ) {
+    if dir_is_empty(path) {
+        return;
+    }
+
     let dirwalker = super::util::DirWalker::new(&path, opts.subdir_mode);
     let reader = BufReader::new(dirwalker);
 
@@ -213,5 +217,13 @@ fn update_hashsums(
     if opts.loglevel_info() {
         let now: DateTime<chrono::Local> = chrono::Local::now();
         println!("[{}] Directory {} Updated", now, path.to_str().unwrap());
+    }
+}
+
+fn dir_is_empty(path: &PathBuf) -> bool {
+    let mut dirwalker = super::util::DirWalker::new(&path, false);
+    match dirwalker.next() {
+        Some(_) => false,
+        None => true,
     }
 }
