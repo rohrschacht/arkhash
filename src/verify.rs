@@ -607,7 +607,7 @@ fn print_progress(
         i += 1;
     }
 
-    message = format!("{} {:03.2}% ", message, progress * 100.0);
+    message = format!("{} {:05.2}% ", message, progress * 100.0);
 
     let progress_bar = 60.0 * progress;
     for i in 0..60 {
