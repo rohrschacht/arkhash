@@ -17,7 +17,7 @@ use self::chrono::{DateTime, Datelike};
 
 use self::crossbeam_deque::Injector;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::channel;
+use std::sync::mpsc::{channel, Receiver, Sender};
 
 /// Verifies the integrity of some directories
 ///
@@ -453,17 +453,21 @@ fn verify_directory_with_progressbar(
 ) -> Result<(), io::Error> {
     let mut processed_bytes: u64 = 0;
     let file_path_re = match super::util::regex_from_opts(&opts) {
-        Ok(re) => re,
+        Ok(re) => Arc::new(re),
         Err(e) => panic!(e),
     };
-
     let all_bytes = count_bytes_from_txt(workdir, opts, &file_path_re);
+    let workdir_str = workdir.to_str().unwrap();
+    let workdir_updater = String::from(workdir_str);
+    let file_path_re_updater = Arc::clone(&file_path_re);
+    let (tx_result, rx_result): (Sender<(String, String)>, Receiver<(String, String)>) = channel();
+    let (tx_paths, rx_paths) = channel();
 
     print_progress(
         all_bytes,
         processed_bytes,
         print_line,
-        &workdir,
+        workdir_str,
         longest_folder,
     )?;
 
@@ -480,7 +484,31 @@ fn verify_directory_with_progressbar(
         Err(e) => panic!(e),
     };
 
-    let (sender, receiver) = channel();
+    let updater_handle = std::thread::spawn(move || {
+        for (mut hashline, cmp) in rx_result {
+            hashline.pop();
+            if let Some(new_captures) = file_path_re_updater.captures(&hashline) {
+                let new_hash = &new_captures[1];
+                if new_hash != cmp {
+                    tx_paths.send(String::from(&new_captures[2])).unwrap();
+                }
+
+                let metadata = fs::metadata(format!("{}/{}", workdir_updater, &new_captures[2]));
+                if let Ok(metadata) = metadata {
+                    processed_bytes += metadata.len();
+                }
+            }
+
+            print_progress(
+                all_bytes,
+                processed_bytes,
+                print_line,
+                &workdir_updater,
+                longest_folder,
+            )
+            .unwrap();
+        }
+    });
 
     for line in BufReader::new(file).lines() {
         if let Ok(line) = line {
@@ -493,7 +521,7 @@ fn verify_directory_with_progressbar(
                     workdir: PathBuf::from(workdir),
                     opts: Arc::clone(&opts),
                     cmp: String::from(hash),
-                    result_chan: sender.clone(),
+                    result_chan: tx_result.clone(),
                 };
 
                 myq.push(task);
@@ -501,40 +529,19 @@ fn verify_directory_with_progressbar(
         }
     }
 
-    drop(sender);
+    drop(tx_result);
 
-    for (mut hashline, cmp) in receiver {
-        hashline.pop();
-        if let Some(new_captures) = file_path_re.captures(&hashline) {
-            let new_hash = &new_captures[1];
-            if new_hash != cmp {
-                failed_paths.push(String::from(&new_captures[2]));
-            }
-
-            let metadata = fs::metadata(format!(
-                "{}/{}",
-                workdir.to_str().unwrap(),
-                &new_captures[2]
-            ));
-            if let Ok(metadata) = metadata {
-                processed_bytes += metadata.len();
-            }
-        }
-
-        print_progress(
-            all_bytes,
-            processed_bytes,
-            print_line,
-            &workdir,
-            longest_folder,
-        )?;
+    for path in rx_paths {
+        failed_paths.push(path);
     }
 
+    updater_handle.join().unwrap();
+
     if failed_paths.is_empty() {
-        print_message(print_line, "checked: OK", &workdir)?;
+        print_message(print_line, "checked: OK", workdir_str)?;
         Ok(())
     } else {
-        print_message(print_line, "checked: FAILED", &workdir)?;
+        print_message(print_line, "checked: FAILED", workdir_str)?;
         Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "Some files changed unexpectedly",
@@ -595,13 +602,13 @@ fn print_progress(
     all_bytes: u64,
     processed_bytes: u64,
     line: u32,
-    workdir: &PathBuf,
+    workdir: &str,
     longest_folder: usize,
 ) -> Result<(), io::Error> {
     let progress = processed_bytes as f64 / all_bytes as f64;
     let mut message = String::new();
 
-    let mut i = workdir.to_str().unwrap().len();
+    let mut i = workdir.len();
     while i < longest_folder {
         message = format!("{} ", message);
         i += 1;
@@ -629,12 +636,12 @@ fn print_progress(
 /// * `line` Number of lines to scroll up before printing the message
 /// * `message` String to print
 /// * `workdir` PathBuf to the current working directory, which is printed before the message
-fn print_message(line: u32, message: &str, workdir: &PathBuf) -> Result<(), io::Error> {
+fn print_message(line: u32, message: &str, workdir: &str) -> Result<(), io::Error> {
     let stdout = io::stdout();
     let mut handle = stdout.lock();
     handle.write_all(b"\x1b[s")?;
     write!(handle, "\x1b[{}A\x1b[2K", line)?;
-    write!(handle, "{}: {}", workdir.to_str().unwrap(), message)?;
+    write!(handle, "{}: {}", workdir, message)?;
     handle.write_all(b"\x1b[u")?;
     io::stdout().flush()
 }
