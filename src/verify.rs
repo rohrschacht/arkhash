@@ -596,7 +596,7 @@ fn count_bytes_from_txt(
 /// * `all_bytes` Number of bytes in this working directory that are listed in _algorithm_sum.txt
 /// * `processed_bytes` Number of already processed bytes
 /// * `line` Number of lines to scroll up before printing the message
-/// * `workdir` PathBuf to the current working directory, which is printed before the message
+/// * `workdir` String containing the current working directory, which is printed before the message
 /// * `longest_folder` Number of characters in the name of the longest folder, determines how many spaces are padded
 fn print_progress(
     all_bytes: u64,
@@ -635,7 +635,7 @@ fn print_progress(
 /// # Arguments
 /// * `line` Number of lines to scroll up before printing the message
 /// * `message` String to print
-/// * `workdir` PathBuf to the current working directory, which is printed before the message
+/// * `workdir` String containing the current working directory, which is printed before the message
 fn print_message(line: u32, message: &str, workdir: &str) -> Result<(), io::Error> {
     let stdout = io::stdout();
     let mut handle = stdout.lock();
