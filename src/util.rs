@@ -10,7 +10,7 @@ extern crate sha2;
 
 use self::regex::Regex;
 use std::fs::{self, OpenOptions};
-use std::io::{BufRead, BufReader, Error, Read};
+use std::io::{self, BufRead, BufReader, Error, Read};
 use std::path::PathBuf;
 
 use self::digest::{Digest, DynDigest};
@@ -23,6 +23,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::thread::JoinHandle;
+
+use std::fmt;
 
 /// The mode the program will operate in
 #[derive(Debug, Clone)]
@@ -52,7 +54,20 @@ pub struct HashTask {
     /// A string containing the hash that the file should match
     pub cmp: String,
     /// A channel to return the calculated hash and cmp to the task generator
-    pub result_chan: Sender<(String, String)>,
+    pub result_chan: Sender<Result<(String, String), HashError>>,
+}
+
+/// An error that occurs when a file cannot be hashed
+#[derive(Debug)]
+pub struct HashError {
+    source: io::Error,
+    path: String,
+}
+
+impl fmt::Display for HashError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}: {}", self.source.to_string(), self.path)
+    }
 }
 
 /// A single structure that gets constructed by commandline arguments and describes the behavior of the program
@@ -241,9 +256,13 @@ pub fn regex_from_opts(opts: &Options) -> Result<Regex, &'static str> {
 /// # Returns
 ///
 /// A String containing the output of the _algorithm_sum command.
-pub fn calculate_hash(path: String, workdir: &PathBuf, opts: &super::util::Options) -> String {
-    let mut file = fs::File::open(&format!("{}/{}", workdir.to_str().unwrap(), path)).unwrap();
-    const BUFFER_SIZE: usize = 100;
+pub fn calculate_hash(
+    path: String,
+    workdir: &PathBuf,
+    opts: &super::util::Options,
+) -> Result<String, HashError> {
+    let file = fs::File::open(&format!("{}/{}", workdir.to_str().unwrap(), path));
+    const BUFFER_SIZE: usize = 1024;
     let mut buffer = [0; BUFFER_SIZE];
 
     let mut hasher = match opts.algorithm.as_ref() {
@@ -256,16 +275,24 @@ pub fn calculate_hash(path: String, workdir: &PathBuf, opts: &super::util::Optio
         _ => panic!("Algorithm not recognized"),
     };
 
-    loop {
-        let n = file.read(&mut buffer).unwrap();
-        hasher.input(&buffer[0..n]);
-
-        if n == 0 || n < BUFFER_SIZE {
-            break;
+    match file {
+        Err(e) => {
+            return Err(HashError {
+                source: e,
+                path: path,
+            })
         }
+        Ok(mut file) => loop {
+            let n = file.read(&mut buffer).unwrap();
+            hasher.input(&buffer[0..n]);
+
+            if n == 0 || n < BUFFER_SIZE {
+                break;
+            }
+        },
     }
 
-    format!("{}  {}\n", hex::encode(hasher.result()), path)
+    Ok(format!("{}  {}\n", hex::encode(hasher.result()), path))
 }
 
 /// Starts a number of worker threads ready for hashing files.
@@ -292,7 +319,10 @@ pub fn execute_workers(
             match task {
                 Steal::Success(task) => {
                     let hashline = calculate_hash(task.path, &task.workdir, &task.opts);
-                    task.result_chan.send((hashline, task.cmp)).unwrap();
+                    match hashline {
+                        Ok(hashline) => task.result_chan.send(Ok((hashline, task.cmp))).unwrap(),
+                        Err(e) => task.result_chan.send(Err(e)).unwrap(),
+                    };
                 }
                 Steal::Retry => {
                     std::thread::sleep(std::time::Duration::from_millis(10));

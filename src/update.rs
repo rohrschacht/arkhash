@@ -201,14 +201,24 @@ fn update_hashsums(
 
             drop(sender);
 
-            for (hashline, _) in receiver {
-                if let Err(e) = write!(file, "{}", hashline) {
-                    eprintln!("Error writing to file: {}", e);
-                }
+            for task_result in receiver {
+                if let Ok((hashline, _)) = task_result {
+                    if let Err(e) = write!(file, "{}", hashline) {
+                        eprintln!("Error writing to file: {}", e);
+                    }
 
-                if opts.loglevel_info() {
+                    if opts.loglevel_info() {
+                        let now: DateTime<chrono::Local> = chrono::Local::now();
+                        print!("[{}] {}: {}", now, path.to_str().unwrap(), hashline);
+                    }
+                } else {
                     let now: DateTime<chrono::Local> = chrono::Local::now();
-                    print!("[{}] {}: {}", now, path.to_str().unwrap(), hashline);
+                    eprintln!(
+                        "[{}] {}: {}",
+                        now,
+                        path.to_str().unwrap(),
+                        "could not hash file!"
+                    );
                 }
             }
         }

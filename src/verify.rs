@@ -19,6 +19,8 @@ use self::crossbeam_deque::Injector;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
 
+use super::util::HashError;
+
 /// Verifies the integrity of some directories
 ///
 /// # Arguments
@@ -409,16 +411,27 @@ fn verify_directory_oneshot(
 
     drop(sender);
 
-    for (mut hashline, cmp) in receiver {
-        hashline.pop();
-        if let Some(new_captures) = file_path_re.captures(&hashline) {
-            let new_hash = &new_captures[1];
-            if new_hash != cmp {
-                if opts.loglevel_info() {
-                    let now: DateTime<chrono::Local> = chrono::Local::now();
-                    println!("[{}] {}: {}", now, workdir.to_str().unwrap(), hashline);
+    for task_result in receiver {
+        match task_result {
+            Ok((mut hashline, cmp)) => {
+                hashline.pop();
+                if let Some(new_captures) = file_path_re.captures(&hashline) {
+                    let new_hash = &new_captures[1];
+                    if new_hash != cmp {
+                        if opts.loglevel_info() {
+                            let now: DateTime<chrono::Local> = chrono::Local::now();
+                            println!("[{}] {}: {}", now, workdir.to_str().unwrap(), hashline);
+                        }
+                        failed_paths.push(String::from(&new_captures[2]));
+                        success = false;
+                    }
                 }
-                failed_paths.push(String::from(&new_captures[2]));
+            }
+            Err(e) => {
+                let now: DateTime<chrono::Local> = chrono::Local::now();
+                eprintln!("[{}] {}: {}", now, workdir.to_str().unwrap(), e);
+
+                failed_paths.push(e.to_string());
                 success = false;
             }
         }
@@ -460,7 +473,10 @@ fn verify_directory_with_progressbar(
     let workdir_str = workdir.to_str().unwrap();
     let workdir_updater = String::from(workdir_str);
     let file_path_re_updater = Arc::clone(&file_path_re);
-    let (tx_result, rx_result): (Sender<(String, String)>, Receiver<(String, String)>) = channel();
+    let (tx_result, rx_result): (
+        Sender<Result<(String, String), HashError>>,
+        Receiver<Result<(String, String), HashError>>,
+    ) = channel();
     let (tx_paths, rx_paths) = channel();
 
     print_progress(
@@ -485,28 +501,36 @@ fn verify_directory_with_progressbar(
     };
 
     let updater_handle = std::thread::spawn(move || {
-        for (mut hashline, cmp) in rx_result {
-            hashline.pop();
-            if let Some(new_captures) = file_path_re_updater.captures(&hashline) {
-                let new_hash = &new_captures[1];
-                if new_hash != cmp {
-                    tx_paths.send(String::from(&new_captures[2])).unwrap();
-                }
+        for task_result in rx_result {
+            match task_result {
+                Ok((mut hashline, cmp)) => {
+                    hashline.pop();
+                    if let Some(new_captures) = file_path_re_updater.captures(&hashline) {
+                        let new_hash = &new_captures[1];
+                        if new_hash != cmp {
+                            tx_paths.send(String::from(&new_captures[2])).unwrap();
+                        }
 
-                let metadata = fs::metadata(format!("{}/{}", workdir_updater, &new_captures[2]));
-                if let Ok(metadata) = metadata {
-                    processed_bytes += metadata.len();
+                        let metadata =
+                            fs::metadata(format!("{}/{}", workdir_updater, &new_captures[2]));
+                        if let Ok(metadata) = metadata {
+                            processed_bytes += metadata.len();
+                        }
+                    }
+
+                    print_progress(
+                        all_bytes,
+                        processed_bytes,
+                        print_line,
+                        &workdir_updater,
+                        longest_folder,
+                    )
+                    .unwrap();
+                }
+                Err(e) => {
+                    tx_paths.send(e.to_string()).unwrap();
                 }
             }
-
-            print_progress(
-                all_bytes,
-                processed_bytes,
-                print_line,
-                &workdir_updater,
-                longest_folder,
-            )
-            .unwrap();
         }
     });
 
