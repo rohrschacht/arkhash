@@ -562,10 +562,10 @@ fn verify_directory_with_progressbar(
     updater_handle.join().unwrap();
 
     if failed_paths.is_empty() {
-        print_message(print_line, "checked: OK", workdir_str)?;
+        print_message_aligned(print_line, "checked: OK", workdir_str, longest_folder)?;
         Ok(())
     } else {
-        print_message(print_line, "checked: FAILED", workdir_str)?;
+        print_message_aligned(print_line, "checked: FAILED", workdir_str, longest_folder)?;
         Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "Some files changed unexpectedly",
@@ -630,15 +630,7 @@ fn print_progress(
     longest_folder: usize,
 ) -> Result<(), io::Error> {
     let progress = processed_bytes as f64 / all_bytes as f64;
-    let mut message = String::new();
-
-    let mut i = workdir.len();
-    while i < longest_folder {
-        message = format!("{} ", message);
-        i += 1;
-    }
-
-    message = format!("{} {:05.2}% ", message, progress * 100.0);
+    let mut message = format!("{:05.2}% ", progress * 100.0);
 
     let progress_bar = 60.0 * progress;
     for i in 0..60 {
@@ -649,7 +641,7 @@ fn print_progress(
         }
     }
 
-    print_message(line, &message, workdir)
+    print_message_aligned(line, &message, workdir, longest_folder)
 }
 
 /// Print a message N lines above the current cursor.
@@ -668,6 +660,22 @@ fn print_message(line: u32, message: &str, workdir: &str) -> Result<(), io::Erro
     write!(handle, "{}: {}", workdir, message)?;
     handle.write_all(b"\x1b[u")?;
     io::stdout().flush()
+}
+
+fn print_message_aligned(
+    line: u32,
+    message: &str,
+    workdir: &str,
+    longest_folder: usize,
+) -> Result<(), io::Error> {
+    let mut padding = String::new();
+    let mut i = workdir.len();
+    while i < longest_folder {
+        padding = format!("{} ", padding);
+        i += 1;
+    }
+    let to_print = &format!("{} {}", padding, message);
+    print_message(line, to_print, workdir)
 }
 
 /// Build up a vec containing the paths to directories that were already checked
