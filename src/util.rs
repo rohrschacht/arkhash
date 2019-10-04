@@ -75,6 +75,8 @@ impl fmt::Display for HashError {
 pub struct Options {
     /// Whether or not the help message will be displayed
     pub help: bool,
+    /// Whether or not to display version information
+    pub version_info: bool,
     /// My name
     pub program_name: String,
     /// The hashing algorithm to use
@@ -100,6 +102,7 @@ impl Options {
     pub fn new(args: Vec<String>) -> Options {
         let mut opts = Options {
             help: false,
+            version_info: true,
             program_name: "arkhash".to_string(),
             algorithm: "sha1".to_string(),
             subdir_mode: false,
@@ -161,6 +164,7 @@ impl Options {
                             })
                     }
                     "-h" | "--help" => opts.help = true,
+                    "-V" | "--version" => opts.version_info = true,
                     _ => opts.help = true,
                 }
             } else {
