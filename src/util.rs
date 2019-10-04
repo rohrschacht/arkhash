@@ -102,7 +102,7 @@ impl Options {
     pub fn new(args: Vec<String>) -> Options {
         let mut opts = Options {
             help: false,
-            version_info: true,
+            version_info: false,
             program_name: "arkhash".to_string(),
             algorithm: "sha1".to_string(),
             subdir_mode: false,
