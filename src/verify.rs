@@ -662,6 +662,17 @@ fn print_message(line: u32, message: &str, workdir: &str) -> Result<(), io::Erro
     io::stdout().flush()
 }
 
+/// Print a message N lines above the current cursor.
+/// Cursor position is saved and restored after this operation.
+/// The line is cleared before printing.
+/// The message gets padded to the left with spaces in order to align it with
+/// other messages on other lines, using longest_folder as an indicator of needed padding.
+///
+/// # Arguments
+/// * `line` Number of lines to scroll up before printing the message
+/// * `message` String to print
+/// * `workdir` String containing the current working directory, which is printed before the message
+/// * `longest_folder` length of the name of the longest folder in the current workset
 fn print_message_aligned(
     line: u32,
     message: &str,
