@@ -103,7 +103,7 @@ impl Options {
         let mut opts = Options {
             help: false,
             version_info: false,
-            program_name: "arkhash".to_string(),
+            program_name: args[0].to_string(),
             algorithm: "sha1".to_string(),
             subdir_mode: false,
             mode: Mode::Filter,
@@ -113,12 +113,10 @@ impl Options {
         };
 
         // prepare Strings for parsing
-        let args = prepare_args(args);
-
-        opts.program_name = args[0].clone();
+        let args = prepare_args(args[1..].to_vec());
 
         // loop through every argument, except the name
-        for i in 1..args.len() {
+        for i in 0..args.len() {
             let arg = &args[i];
 
             // match options (Strings with leading -)
