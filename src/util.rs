@@ -8,6 +8,12 @@ extern crate regex;
 extern crate sha1;
 extern crate sha2;
 
+#[cfg(unix)]
+extern crate termios;
+
+#[cfg(windows)]
+extern crate winapi;
+
 use self::regex::Regex;
 use std::fs::{self, OpenOptions};
 use std::io::{self, BufRead, BufReader, Error, Read};
@@ -340,6 +346,29 @@ pub fn execute_workers(
 
         worker_handles.push(handle);
     }
+}
+
+#[cfg(unix)]
+pub fn terminal_noecho() {
+    let mut termios_noecho = termios::Termios::from_fd(0).unwrap();
+    termios_noecho.c_lflag &= !termios::ECHO;
+    termios::tcsetattr(0, termios::TCSANOW, &termios_noecho).unwrap();
+}
+
+#[cfg(windows)]
+pub fn terminal_noecho() {
+    use winapi::shared::minwindef::LPDWORD;
+    use winapi::um::consoleapi::{GetConsoleMode, SetConsoleMode};
+    use winapi::um::processenv::GetStdHandle;
+    use winapi::um::winbase::STD_INPUT_HANDLE;
+    use winapi::um::wincon::ENABLE_ECHO_INPUT;
+
+    let handle = GetStdHandle(STD_INPUT_HANDLE);
+
+    let mut mode = 0;
+    // unsafe { GetConsoleMode(handle, &mut mode as LPDWORD) };
+    GetConsoleMode(handle, &mut mode as LPDWORD);
+    SetConsoleMode(handle, mode & (!ENABLE_ECHO_INPUT));
 }
 
 /// Read paths line by line from a file and return them in a Vector

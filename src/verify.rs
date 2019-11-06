@@ -4,7 +4,6 @@ extern crate chrono;
 extern crate crossbeam_deque;
 extern crate num_cpus;
 extern crate regex;
-extern crate termios;
 
 use std::borrow::Borrow;
 use std::fs::{self, OpenOptions};
@@ -41,9 +40,7 @@ pub fn verify_directories(opts: super::util::Options) {
         // execute in directory
 
         if opts.loglevel_progress() {
-            let mut termios_noecho = termios::Termios::from_fd(0).unwrap();
-            termios_noecho.c_lflag &= !termios::ECHO;
-            termios::tcsetattr(0, termios::TCSANOW, &termios_noecho).unwrap();
+            super::util::terminal_noecho();
             println!();
         }
         let mut worker_handles = Vec::new();
@@ -91,9 +88,7 @@ pub fn verify_directories(opts: super::util::Options) {
             gather_directories_to_process(&opts, &already_checked);
 
         if opts.loglevel_progress() {
-            let mut termios_noecho = termios::Termios::from_fd(0).unwrap();
-            termios_noecho.c_lflag &= !termios::ECHO;
-            termios::tcsetattr(0, termios::TCSANOW, &termios_noecho).unwrap();
+            super::util::terminal_noecho();
             for _ in 0..dirs_to_process.len() {
                 println!();
             }
