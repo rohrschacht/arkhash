@@ -1,6 +1,9 @@
 extern crate assert_cli;
 extern crate regex;
 
+#[cfg(windows)]
+extern crate remove_dir_all;
+
 use assert_cli::*;
 use regex::Regex;
 
@@ -449,6 +452,12 @@ Ut wisi enim ad minim veniam, quis nostrud exerci tation ullamcorper suscipit lo
 Nam liber tempor cum soluta nobis eleifend option congue nihil imperdiet doming id quod mazim placerat facer possim assum. Lorem ipsum dolor sit amet, consectetuer adipiscing elit, sed diam nonummy nibh euismod tincidunt ut laoreet dolore magna aliquam erat volutpat. Ut wisi enim ad minim veniam, quis nostrud exerci tation ullamcorper suscipit lobortis nisl ut aliquip ex ea commodo").unwrap();
 }
 
+#[cfg(unix)]
 fn teardown() {
     fs::remove_dir_all("testenvironment").unwrap();
+}
+
+#[cfg(windows)]
+fn teardown() {
+    remove_dir_all::remove_dir_all("testenvironment").unwrap();
 }

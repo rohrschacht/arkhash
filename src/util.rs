@@ -8,6 +8,12 @@ extern crate regex;
 extern crate sha1;
 extern crate sha2;
 
+#[cfg(unix)]
+extern crate termios;
+
+#[cfg(windows)]
+extern crate winapi;
+
 use self::regex::Regex;
 use std::fs::{self, OpenOptions};
 use std::io::{self, BufRead, BufReader, Error, Read};
@@ -342,6 +348,29 @@ pub fn execute_workers(
     }
 }
 
+#[cfg(unix)]
+pub fn terminal_noecho() {
+    let mut termios_noecho = termios::Termios::from_fd(0).unwrap();
+    termios_noecho.c_lflag &= !termios::ECHO;
+    termios::tcsetattr(0, termios::TCSANOW, &termios_noecho).unwrap();
+}
+
+#[cfg(windows)]
+pub fn terminal_noecho() {
+    use self::winapi::shared::minwindef::LPDWORD;
+    use self::winapi::um::consoleapi::{GetConsoleMode, SetConsoleMode};
+    use self::winapi::um::processenv::GetStdHandle;
+    use self::winapi::um::winbase::STD_INPUT_HANDLE;
+    use self::winapi::um::wincon::ENABLE_ECHO_INPUT;
+
+    let handle = unsafe { GetStdHandle(STD_INPUT_HANDLE) };
+
+    let mut mode = 0;
+    // unsafe { GetConsoleMode(handle, &mut mode as LPDWORD) };
+    unsafe { GetConsoleMode(handle, &mut mode as LPDWORD) };
+    unsafe { SetConsoleMode(handle, mode & (!ENABLE_ECHO_INPUT)) };
+}
+
 /// Read paths line by line from a file and return them in a Vector
 ///
 /// # Arguments
@@ -425,6 +454,16 @@ impl DirWalker {
             self.current_files.append(&mut files);
         }
     }
+
+    #[cfg(unix)]
+    fn find_dir_seperator_position(path_string: &str) -> usize {
+        path_string.find('/').unwrap()
+    }
+
+    #[cfg(windows)]
+    fn find_dir_seperator_position(path_string: &str) -> usize {
+        path_string.find('\\').unwrap()
+    }
 }
 
 impl Iterator for DirWalker {
@@ -437,7 +476,7 @@ impl Iterator for DirWalker {
             if self.subdir_mode {
                 let path_string = filepath.to_string_lossy().to_string();
                 let path_string = &path_string[2..];
-                let position = path_string.find('/').unwrap();
+                let position = DirWalker::find_dir_seperator_position(path_string);
                 let path_string = format!(".{}", path_string[position..].to_string());
                 let filepath = PathBuf::from(path_string);
                 return Some(filepath);
