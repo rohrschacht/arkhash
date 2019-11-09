@@ -348,6 +348,7 @@ pub fn execute_workers(
     }
 }
 
+/// Disables echo on terminal
 #[cfg(unix)]
 pub fn terminal_noecho() {
     let mut termios_noecho = termios::Termios::from_fd(0).unwrap();
@@ -355,6 +356,7 @@ pub fn terminal_noecho() {
     termios::tcsetattr(0, termios::TCSANOW, &termios_noecho).unwrap();
 }
 
+/// Disables echo on terminal
 #[cfg(windows)]
 pub fn terminal_noecho() {
     use self::winapi::shared::minwindef::LPDWORD;
@@ -455,11 +457,21 @@ impl DirWalker {
         }
     }
 
+    /// Return the position of the first directory seperator in a str containing a path
+    ///
+    /// # Arguments
+    ///
+    /// * `path_string` String containing the path to be searched
     #[cfg(unix)]
     fn find_dir_seperator_position(path_string: &str) -> usize {
         path_string.find('/').unwrap()
     }
 
+    /// Return the position of the first directory seperator in a str containing a path
+    ///
+    /// # Arguments
+    ///
+    /// * `path_string` String containing the path to be searched
     #[cfg(windows)]
     fn find_dir_seperator_position(path_string: &str) -> usize {
         path_string.find('\\').unwrap()
