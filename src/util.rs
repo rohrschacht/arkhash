@@ -363,12 +363,12 @@ pub fn terminal_noecho() {
     use self::winapi::um::winbase::STD_INPUT_HANDLE;
     use self::winapi::um::wincon::ENABLE_ECHO_INPUT;
 
-    let handle = unsafe {GetStdHandle(STD_INPUT_HANDLE) };
+    let handle = unsafe { GetStdHandle(STD_INPUT_HANDLE) };
 
     let mut mode = 0;
     // unsafe { GetConsoleMode(handle, &mut mode as LPDWORD) };
-    unsafe {GetConsoleMode(handle, &mut mode as LPDWORD) };
-    unsafe {SetConsoleMode(handle, mode & (!ENABLE_ECHO_INPUT)) };
+    unsafe { GetConsoleMode(handle, &mut mode as LPDWORD) };
+    unsafe { SetConsoleMode(handle, mode & (!ENABLE_ECHO_INPUT)) };
 }
 
 /// Read paths line by line from a file and return them in a Vector
