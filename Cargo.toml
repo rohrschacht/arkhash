@@ -18,7 +18,7 @@ num_cpus = "1.10.1"
 termios = "0.3"
 
 [target.'cfg(windows)'.dependencies]
-winapi = "0.3"
+winapi = { version = "0.3", features = ["processenv", "winbase", "consoleapi", "minwindef", "wincon"] }
 
 [dev-dependencies]
 assert_cli = "0.6"

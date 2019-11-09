@@ -357,18 +357,18 @@ pub fn terminal_noecho() {
 
 #[cfg(windows)]
 pub fn terminal_noecho() {
-    use winapi::shared::minwindef::LPDWORD;
-    use winapi::um::consoleapi::{GetConsoleMode, SetConsoleMode};
-    use winapi::um::processenv::GetStdHandle;
-    use winapi::um::winbase::STD_INPUT_HANDLE;
-    use winapi::um::wincon::ENABLE_ECHO_INPUT;
+    use self::winapi::shared::minwindef::LPDWORD;
+    use self::winapi::um::consoleapi::{GetConsoleMode, SetConsoleMode};
+    use self::winapi::um::processenv::GetStdHandle;
+    use self::winapi::um::winbase::STD_INPUT_HANDLE;
+    use self::winapi::um::wincon::ENABLE_ECHO_INPUT;
 
-    let handle = GetStdHandle(STD_INPUT_HANDLE);
+    let handle = unsafe {GetStdHandle(STD_INPUT_HANDLE) };
 
     let mut mode = 0;
     // unsafe { GetConsoleMode(handle, &mut mode as LPDWORD) };
-    GetConsoleMode(handle, &mut mode as LPDWORD);
-    SetConsoleMode(handle, mode & (!ENABLE_ECHO_INPUT));
+    unsafe {GetConsoleMode(handle, &mut mode as LPDWORD) };
+    unsafe {SetConsoleMode(handle, mode & (!ENABLE_ECHO_INPUT)) };
 }
 
 /// Read paths line by line from a file and return them in a Vector
