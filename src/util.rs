@@ -454,6 +454,16 @@ impl DirWalker {
             self.current_files.append(&mut files);
         }
     }
+
+    #[cfg(unix)]
+    fn find_dir_seperator_position(path_string: &str) -> usize {
+        path_string.find('/').unwrap()
+    }
+
+    #[cfg(windows)]
+    fn find_dir_seperator_position(path_string: &str) -> usize {
+        path_string.find('\\').unwrap()
+    }
 }
 
 impl Iterator for DirWalker {
@@ -466,7 +476,7 @@ impl Iterator for DirWalker {
             if self.subdir_mode {
                 let path_string = filepath.to_string_lossy().to_string();
                 let path_string = &path_string[2..];
-                let position = path_string.find('/').unwrap();
+                let position = DirWalker::find_dir_seperator_position(path_string);
                 let path_string = format!(".{}", path_string[position..].to_string());
                 let filepath = PathBuf::from(path_string);
                 return Some(filepath);
