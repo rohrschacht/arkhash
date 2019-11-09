@@ -69,6 +69,28 @@ impl<T> Filter<T> {
             }
         }
     }
+
+    /// Returns whether the given line contains the path to the database file
+    ///
+    /// # Arguments
+    ///
+    /// * `line` The String to be checked
+    /// * `algorithm` The used algorithm
+    #[cfg(unix)]
+    fn is_own_database_file(line: &str, algorithm: &str) -> bool {
+        line == format!("./{}sum.txt", algorithm)
+    }
+
+    /// Returns whether the given line contains the path to the database file
+    ///
+    /// # Arguments
+    ///
+    /// * `line` The String to be checked
+    /// * `algorithm` The used algorithm
+    #[cfg(windows)]
+    fn is_own_database_file(line: &str, algorithm: &str) -> bool {
+        line == format!(".\\{}sum.txt", algorithm)
+    }
 }
 
 impl<T: Read> Iterator for Filter<T> {
@@ -84,7 +106,7 @@ impl<T: Read> Iterator for Filter<T> {
                         continue;
                     }
 
-                    if line == format!("./{}sum.txt", self.algorithm) {
+                    if Filter::<T>::is_own_database_file(&line, &self.algorithm) {
                         continue;
                     }
 

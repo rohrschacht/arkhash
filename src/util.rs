@@ -1,12 +1,36 @@
 //! This module describes a set of utilities that will be used throughout the other modules
 
+extern crate crossbeam_deque;
+extern crate digest;
+extern crate hex;
+extern crate md5;
 extern crate regex;
+extern crate sha1;
+extern crate sha2;
+
+#[cfg(unix)]
+extern crate termios;
+
+#[cfg(windows)]
+extern crate winapi;
 
 use self::regex::Regex;
 use std::fs::{self, OpenOptions};
-use std::io::{BufRead, BufReader, Error, Read};
+use std::io::{self, BufRead, BufReader, Error, Read};
 use std::path::PathBuf;
-use std::process::Command;
+
+use self::digest::{Digest, DynDigest};
+use self::md5::Md5;
+use self::sha1::Sha1;
+use self::sha2::{Sha224, Sha256, Sha384, Sha512};
+
+use self::crossbeam_deque::{Injector, Steal};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::Sender;
+use std::sync::Arc;
+use std::thread::JoinHandle;
+
+use std::fmt;
 
 /// The mode the program will operate in
 #[derive(Debug, Clone)]
@@ -25,11 +49,40 @@ pub enum LogLevel {
     Debug,
 }
 
+/// A structure that defines everything needed to hash a requested file and return the result
+pub struct HashTask {
+    /// Path to the file that should be hashed
+    pub path: String,
+    /// The desired working directory of the worker thread
+    pub workdir: PathBuf,
+    /// A reference to an Options struct containing various parameters
+    pub opts: Arc<Options>,
+    /// A string containing the hash that the file should match
+    pub cmp: String,
+    /// A channel to return the calculated hash and cmp to the task generator
+    pub result_chan: Sender<Result<(String, String), HashError>>,
+}
+
+/// An error that occurs when a file cannot be hashed
+#[derive(Debug)]
+pub struct HashError {
+    source: io::Error,
+    path: String,
+}
+
+impl fmt::Display for HashError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}: {}", self.source.to_string(), self.path)
+    }
+}
+
 /// A single structure that gets constructed by commandline arguments and describes the behavior of the program
 #[derive(Debug, Clone)]
 pub struct Options {
     /// Whether or not the help message will be displayed
     pub help: bool,
+    /// Whether or not to display version information
+    pub version_info: bool,
     /// My name
     pub program_name: String,
     /// The hashing algorithm to use
@@ -55,7 +108,8 @@ impl Options {
     pub fn new(args: Vec<String>) -> Options {
         let mut opts = Options {
             help: false,
-            program_name: "arkhash".to_string(),
+            version_info: false,
+            program_name: args[0].to_string(),
             algorithm: "sha1".to_string(),
             subdir_mode: false,
             mode: Mode::Filter,
@@ -65,12 +119,10 @@ impl Options {
         };
 
         // prepare Strings for parsing
-        let args = prepare_args(args);
-
-        opts.program_name = args[0].clone();
+        let args = prepare_args(args[1..].to_vec());
 
         // loop through every argument, except the name
-        for i in 1..args.len() {
+        for i in 0..args.len() {
             let arg = &args[i];
 
             // match options (Strings with leading -)
@@ -116,6 +168,7 @@ impl Options {
                             })
                     }
                     "-h" | "--help" => opts.help = true,
+                    "-V" | "--version" => opts.version_info = true,
                     _ => opts.help = true,
                 }
             } else {
@@ -200,7 +253,7 @@ pub fn regex_from_opts(opts: &Options) -> Result<Regex, &'static str> {
     }
 }
 
-/// Call _algorithm_sum with the path of a file to get the hashsum.
+/// Imitate _algorithm_sum with the path of a file to get the hashsum.
 ///
 /// # Arguments
 ///
@@ -211,13 +264,113 @@ pub fn regex_from_opts(opts: &Options) -> Result<Regex, &'static str> {
 /// # Returns
 ///
 /// A String containing the output of the _algorithm_sum command.
-pub fn calculate_hash(path: String, workdir: &PathBuf, opts: &super::util::Options) -> String {
-    let output = Command::new(format!("{}sum", opts.algorithm))
-        .arg(path)
-        .current_dir(workdir)
-        .output()
-        .unwrap();
-    String::from_utf8_lossy(&output.stdout).to_string()
+pub fn calculate_hash(
+    path: String,
+    workdir: &PathBuf,
+    opts: &super::util::Options,
+) -> Result<String, HashError> {
+    let file = fs::File::open(&format!("{}/{}", workdir.to_str().unwrap(), path));
+    const BUFFER_SIZE: usize = 1024;
+    let mut buffer = [0; BUFFER_SIZE];
+
+    let mut hasher = match opts.algorithm.as_ref() {
+        "sha1" => Box::new(Sha1::new()) as Box<dyn DynDigest>,
+        "md5" => Box::new(Md5::new()) as Box<dyn DynDigest>,
+        "sha224" => Box::new(Sha224::new()) as Box<dyn DynDigest>,
+        "sha256" => Box::new(Sha256::new()) as Box<dyn DynDigest>,
+        "sha384" => Box::new(Sha384::new()) as Box<dyn DynDigest>,
+        "sha512" => Box::new(Sha512::new()) as Box<dyn DynDigest>,
+        _ => panic!("Algorithm not recognized"),
+    };
+
+    match file {
+        Err(e) => {
+            return Err(HashError {
+                source: e,
+                path: path,
+            })
+        }
+        Ok(mut file) => loop {
+            let n = file.read(&mut buffer).unwrap();
+            hasher.input(&buffer[0..n]);
+
+            if n == 0 || n < BUFFER_SIZE {
+                break;
+            }
+        },
+    }
+
+    Ok(format!("{}  {}\n", hex::encode(hasher.result()), path))
+}
+
+/// Starts a number of worker threads ready for hashing files.
+///
+/// # Arguments
+///
+/// * `num_threads` Number of worker threads to start
+/// * `q` Reference to the Injector that will carry the HashTask objects
+/// * `produced_finished` Reference to a central boolean that indicates that no new HashTasks will be pushed into q
+/// * `worker_handles` A mutable reference to a vector of thread handles, in which the handles to the worker threads will be stored
+pub fn execute_workers(
+    num_threads: usize,
+    q: Arc<Injector<super::util::HashTask>>,
+    producer_finished: Arc<AtomicBool>,
+    worker_handles: &mut Vec<JoinHandle<()>>,
+) {
+    for _ in 0..num_threads {
+        let myq = Arc::clone(&q);
+        let myp = Arc::clone(&producer_finished);
+
+        let handle = std::thread::spawn(move || loop {
+            let task = myq.steal();
+
+            match task {
+                Steal::Success(task) => {
+                    let hashline = calculate_hash(task.path, &task.workdir, &task.opts);
+                    match hashline {
+                        Ok(hashline) => task.result_chan.send(Ok((hashline, task.cmp))).unwrap(),
+                        Err(e) => task.result_chan.send(Err(e)).unwrap(),
+                    };
+                }
+                Steal::Retry => {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Steal::Empty => {
+                    if myp.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+            }
+        });
+
+        worker_handles.push(handle);
+    }
+}
+
+/// Disables echo on terminal
+#[cfg(unix)]
+pub fn terminal_noecho() {
+    let mut termios_noecho = termios::Termios::from_fd(0).unwrap();
+    termios_noecho.c_lflag &= !termios::ECHO;
+    termios::tcsetattr(0, termios::TCSANOW, &termios_noecho).unwrap();
+}
+
+/// Disables echo on terminal
+#[cfg(windows)]
+pub fn terminal_noecho() {
+    use self::winapi::shared::minwindef::LPDWORD;
+    use self::winapi::um::consoleapi::{GetConsoleMode, SetConsoleMode};
+    use self::winapi::um::processenv::GetStdHandle;
+    use self::winapi::um::winbase::STD_INPUT_HANDLE;
+    use self::winapi::um::wincon::ENABLE_ECHO_INPUT;
+
+    let handle = unsafe { GetStdHandle(STD_INPUT_HANDLE) };
+
+    let mut mode = 0;
+    // unsafe { GetConsoleMode(handle, &mut mode as LPDWORD) };
+    unsafe { GetConsoleMode(handle, &mut mode as LPDWORD) };
+    unsafe { SetConsoleMode(handle, mode & (!ENABLE_ECHO_INPUT)) };
 }
 
 /// Read paths line by line from a file and return them in a Vector
@@ -303,6 +456,26 @@ impl DirWalker {
             self.current_files.append(&mut files);
         }
     }
+
+    /// Return the position of the first directory seperator in a str containing a path
+    ///
+    /// # Arguments
+    ///
+    /// * `path_string` String containing the path to be searched
+    #[cfg(unix)]
+    fn find_dir_seperator_position(path_string: &str) -> usize {
+        path_string.find('/').unwrap()
+    }
+
+    /// Return the position of the first directory seperator in a str containing a path
+    ///
+    /// # Arguments
+    ///
+    /// * `path_string` String containing the path to be searched
+    #[cfg(windows)]
+    fn find_dir_seperator_position(path_string: &str) -> usize {
+        path_string.find('\\').unwrap()
+    }
 }
 
 impl Iterator for DirWalker {
@@ -315,7 +488,7 @@ impl Iterator for DirWalker {
             if self.subdir_mode {
                 let path_string = filepath.to_string_lossy().to_string();
                 let path_string = &path_string[2..];
-                let position = path_string.find('/').unwrap();
+                let position = DirWalker::find_dir_seperator_position(path_string);
                 let path_string = format!(".{}", path_string[position..].to_string());
                 let filepath = PathBuf::from(path_string);
                 return Some(filepath);

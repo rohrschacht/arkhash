@@ -1,21 +1,24 @@
 //! This module implements the verify mode
 
 extern crate chrono;
+extern crate crossbeam_deque;
+extern crate num_cpus;
 extern crate regex;
-extern crate termios;
-extern crate threadpool;
 
 use std::borrow::Borrow;
 use std::fs::{self, OpenOptions};
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::thread;
 
 use self::chrono::{DateTime, Datelike};
 
-use self::threadpool::ThreadPool;
+use self::crossbeam_deque::Injector;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{channel, Receiver, Sender};
+
+use super::util::HashError;
 
 /// Verifies the integrity of some directories
 ///
@@ -33,26 +36,51 @@ pub fn verify_directories(opts: super::util::Options) {
         println!("Already checked subdirs: {:?}", already_checked);
     }
 
-    let termios_original = termios::Termios::from_fd(0).unwrap();
-    let mut termios_noecho = termios_original;
-    termios_noecho.c_lflag &= !termios::ECHO;
-
     if !opts.subdir_mode {
         // execute in directory
 
         if opts.loglevel_progress() {
-            termios::tcsetattr(0, termios::TCSANOW, &termios_noecho).unwrap();
+            super::util::terminal_noecho();
             println!();
         }
+        let mut worker_handles = Vec::new();
+        let q = Arc::new(Injector::new());
+        let producer_finished = Arc::new(AtomicBool::new(false));
+        let num_threads = match opts.num_threads {
+            0 => num_cpus::get(),
+            _ => opts.num_threads,
+        };
 
-        verify_directory(
-            &PathBuf::from(&opts.folder),
-            Arc::new(known_good_path),
-            Arc::new(to_check_path),
-            Arc::new(opts),
-            1,
-            0,
+        let opts = Arc::new(opts);
+        let workdir = PathBuf::from(&opts.folder);
+        let myq = Arc::clone(&q);
+
+        let handle = thread::spawn(move || {
+            verify_directory(
+                &workdir,
+                Arc::new(known_good_path),
+                Arc::new(to_check_path),
+                opts,
+                1,
+                0,
+                myq,
+            );
+        });
+
+        super::util::execute_workers(
+            num_threads,
+            Arc::clone(&q),
+            Arc::clone(&producer_finished),
+            &mut worker_handles,
         );
+
+        handle.join().unwrap();
+
+        producer_finished.store(true, Ordering::Relaxed);
+
+        for handle in worker_handles {
+            handle.join().unwrap();
+        }
     } else {
         // iterate over subdirs and spawn verify_directory threads
 
@@ -60,28 +88,19 @@ pub fn verify_directories(opts: super::util::Options) {
             gather_directories_to_process(&opts, &already_checked);
 
         if opts.loglevel_progress() {
-            termios::tcsetattr(0, termios::TCSANOW, &termios_noecho).unwrap();
+            super::util::terminal_noecho();
             for _ in 0..dirs_to_process.len() {
                 println!();
             }
         }
 
-        match opts.num_threads {
-            0 => execute_threads_unlimited(
-                opts,
-                known_good_path,
-                to_check_path,
-                dirs_to_process,
-                longest_folder,
-            ),
-            _ => execute_threads_limited(
-                opts,
-                known_good_path,
-                to_check_path,
-                dirs_to_process,
-                longest_folder,
-            ),
-        }
+        execute_threads_subdir(
+            opts,
+            known_good_path,
+            to_check_path,
+            dirs_to_process,
+            longest_folder,
+        )
     }
 }
 
@@ -135,21 +154,29 @@ fn gather_directories_to_process(
 /// * `to_check_path` Path to the text file containing all checked and bad directories
 /// * `dirs_to_process` Vector of directory paths that have to be checked
 /// * `longest_folder` Number of characters in the name of the longest folder
-fn execute_threads_unlimited(
+fn execute_threads_subdir(
     opts: super::util::Options,
     known_good_path: String,
     to_check_path: String,
     dirs_to_process: Vec<PathBuf>,
     longest_folder: usize,
 ) {
-    let mut thread_handles = Vec::new();
+    let mut producer_handles = Vec::new();
+    let mut worker_handles = Vec::new();
     let mut print_line = 1;
     let opts = Arc::new(opts);
     let known_good_path = Arc::new(known_good_path);
     let to_check_path = Arc::new(to_check_path);
+    let q = Arc::new(Injector::new());
+    let producer_finished = Arc::new(AtomicBool::new(false));
+    let num_threads = match opts.num_threads {
+        0 => num_cpus::get(),
+        _ => opts.num_threads,
+    };
 
     for entry in dirs_to_process {
         let opts = Arc::clone(&opts);
+        let myq = Arc::clone(&q);
         let known_good_path = Arc::clone(&known_good_path);
         let to_check_path = Arc::clone(&to_check_path);
 
@@ -161,61 +188,31 @@ fn execute_threads_unlimited(
                 opts,
                 print_line,
                 longest_folder,
+                myq,
             );
         });
-        thread_handles.push(handle);
+
+        producer_handles.push(handle);
 
         print_line += 1;
     }
 
-    for handle in thread_handles {
+    super::util::execute_workers(
+        num_threads,
+        Arc::clone(&q),
+        Arc::clone(&producer_finished),
+        &mut worker_handles,
+    );
+
+    for handle in producer_handles {
         handle.join().unwrap();
     }
-}
 
-/// Starts a thread for every directory in dirs_to_process and launches opts.num_threads of them in parallel.
-/// When a thread finished its work, the next one will be launched.
-/// Waits for them to finish.
-///
-/// # Arguments
-/// * `opts` Options object
-/// * `known_good_path` Path to the text file containing all checked and good directories
-/// * `to_check_path` Path to the text file containing all checked and bad directories
-/// * `dirs_to_process` Vector of directory paths that have to be checked
-/// * `longest_folder` Number of characters in the name of the longest folder
-fn execute_threads_limited(
-    opts: super::util::Options,
-    known_good_path: String,
-    to_check_path: String,
-    dirs_to_process: Vec<PathBuf>,
-    longest_folder: usize,
-) {
-    let pool = ThreadPool::new(opts.num_threads);
-    let mut print_line = 1;
-    let opts = Arc::new(opts);
-    let known_good_path = Arc::new(known_good_path);
-    let to_check_path = Arc::new(to_check_path);
+    producer_finished.store(true, Ordering::Relaxed);
 
-    for entry in dirs_to_process {
-        let opts = Arc::clone(&opts);
-        let known_good_path = Arc::clone(&known_good_path);
-        let to_check_path = Arc::clone(&to_check_path);
-
-        pool.execute(move || {
-            verify_directory(
-                &entry,
-                known_good_path,
-                to_check_path,
-                opts,
-                print_line,
-                longest_folder,
-            );
-        });
-
-        print_line += 1;
+    for handle in worker_handles {
+        handle.join().unwrap();
     }
-
-    pool.join();
 }
 
 /// Verifies the integrity of a directory
@@ -235,6 +232,7 @@ fn verify_directory(
     opts: Arc<super::util::Options>,
     print_line: u32,
     longest_folder: usize,
+    myq: Arc<Injector<super::util::HashTask>>,
 ) {
     if opts.loglevel_info() {
         let now: DateTime<chrono::Local> = chrono::Local::now();
@@ -254,9 +252,10 @@ fn verify_directory(
             print_line,
             &mut failed_paths,
             longest_folder,
+            myq,
         )
     } else {
-        verify_directory_oneshot(&workdir, &opts, &mut failed_paths)
+        verify_directory_oneshot(&workdir, &opts, &mut failed_paths, myq)
     };
 
     if success.is_ok() {
@@ -363,59 +362,82 @@ fn verify_directory_oneshot(
     workdir: &PathBuf,
     opts: &Arc<super::util::Options>,
     failed_paths: &mut Vec<String>,
+    myq: Arc<Injector<super::util::HashTask>>,
 ) -> Result<(), io::Error> {
-    let child = Command::new(format!("{}sum", opts.algorithm))
-        .arg("-c")
-        .arg("--quiet")
-        .arg(format!("{}sum.txt", opts.algorithm))
-        .current_dir(&workdir)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn();
+    let file_path_re = match super::util::regex_from_opts(&opts) {
+        Ok(re) => re,
+        Err(e) => panic!(e),
+    };
+    let mut success = true;
 
-    if let Ok(mut child) = child {
-        // The _algorithm_sum command can be successfully executed in workdir
+    let file = match OpenOptions::new()
+        .read(true)
+        .append(true)
+        .create(true)
+        .open(format!(
+            "{}/{}sum.txt",
+            workdir.to_str().unwrap(),
+            opts.algorithm
+        )) {
+        Ok(f) => f,
+        Err(e) => panic!(e),
+    };
 
-        let reader = BufReader::new(child.stdout.take().unwrap());
+    let (sender, receiver) = channel();
 
-        for line in reader.lines() {
-            match line {
-                Err(_) => continue,
-                Ok(line) => {
-                    if opts.loglevel_info() {
-                        let now: DateTime<chrono::Local> = chrono::Local::now();
-                        println!("[{}] {}: {}", now, workdir.to_str().unwrap(), line);
-                    }
+    for line in BufReader::new(file).lines() {
+        if let Ok(line) = line {
+            if let Some(captures) = file_path_re.captures(&line) {
+                let hash = &captures[1];
+                let path = &captures[2];
 
-                    failed_paths.push(line);
-                }
+                let task = super::util::HashTask {
+                    path: String::from(path),
+                    workdir: PathBuf::from(workdir),
+                    opts: Arc::clone(&opts),
+                    cmp: String::from(hash),
+                    result_chan: sender.clone(),
+                };
+
+                myq.push(task);
             }
         }
+    }
 
-        let exit_status = child.wait().unwrap();
+    drop(sender);
 
-        if exit_status.success() {
-            Ok(())
-        } else {
-            Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Some files changed unexpectedly",
-            ))
+    for task_result in receiver {
+        match task_result {
+            Ok((mut hashline, cmp)) => {
+                hashline.pop();
+                if let Some(new_captures) = file_path_re.captures(&hashline) {
+                    let new_hash = &new_captures[1];
+                    if new_hash != cmp {
+                        if opts.loglevel_info() {
+                            let now: DateTime<chrono::Local> = chrono::Local::now();
+                            println!("[{}] {}: {}", now, workdir.to_str().unwrap(), hashline);
+                        }
+                        failed_paths.push(String::from(&new_captures[2]));
+                        success = false;
+                    }
+                }
+            }
+            Err(e) => {
+                let now: DateTime<chrono::Local> = chrono::Local::now();
+                eprintln!("[{}] {}: {}", now, workdir.to_str().unwrap(), e);
+
+                failed_paths.push(e.to_string());
+                success = false;
+            }
         }
+    }
+
+    if success {
+        Ok(())
     } else {
-        // The _algorithm_sum command can NOT be successfully executed in workdir
-        if opts.loglevel_info() {
-            let now = chrono::Local::now();
-            println!(
-                "[{}] Directory {}: Permission Denied",
-                now,
-                workdir.to_str().unwrap()
-            );
-        }
-
         Err(io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            "Child could not be spawned in workdir",
+            io::ErrorKind::InvalidData,
+            "Some files changed unexpectedly",
         ))
     }
 }
@@ -435,20 +457,28 @@ fn verify_directory_with_progressbar(
     print_line: u32,
     failed_paths: &mut Vec<String>,
     longest_folder: usize,
+    myq: Arc<Injector<super::util::HashTask>>,
 ) -> Result<(), io::Error> {
     let mut processed_bytes: u64 = 0;
     let file_path_re = match super::util::regex_from_opts(&opts) {
-        Ok(re) => re,
+        Ok(re) => Arc::new(re),
         Err(e) => panic!(e),
     };
-
     let all_bytes = count_bytes_from_txt(workdir, opts, &file_path_re);
+    let workdir_str = workdir.to_str().unwrap();
+    let workdir_updater = String::from(workdir_str);
+    let file_path_re_updater = Arc::clone(&file_path_re);
+    let (tx_result, rx_result): (
+        Sender<Result<(String, String), HashError>>,
+        Receiver<Result<(String, String), HashError>>,
+    ) = channel();
+    let (tx_paths, rx_paths) = channel();
 
     print_progress(
         all_bytes,
         processed_bytes,
         print_line,
-        &workdir,
+        workdir_str,
         longest_folder,
     )?;
 
@@ -465,42 +495,72 @@ fn verify_directory_with_progressbar(
         Err(e) => panic!(e),
     };
 
+    let updater_handle = std::thread::spawn(move || {
+        for task_result in rx_result {
+            match task_result {
+                Ok((mut hashline, cmp)) => {
+                    hashline.pop();
+                    if let Some(new_captures) = file_path_re_updater.captures(&hashline) {
+                        let new_hash = &new_captures[1];
+                        if new_hash != cmp {
+                            tx_paths.send(String::from(&new_captures[2])).unwrap();
+                        }
+
+                        let metadata =
+                            fs::metadata(format!("{}/{}", workdir_updater, &new_captures[2]));
+                        if let Ok(metadata) = metadata {
+                            processed_bytes += metadata.len();
+                        }
+                    }
+
+                    print_progress(
+                        all_bytes,
+                        processed_bytes,
+                        print_line,
+                        &workdir_updater,
+                        longest_folder,
+                    )
+                    .unwrap();
+                }
+                Err(e) => {
+                    tx_paths.send(e.to_string()).unwrap();
+                }
+            }
+        }
+    });
+
     for line in BufReader::new(file).lines() {
         if let Ok(line) = line {
             if let Some(captures) = file_path_re.captures(&line) {
                 let hash = &captures[1];
                 let path = &captures[2];
 
-                let mut new_hash = super::util::calculate_hash(String::from(path), &workdir, &opts);
-                new_hash.pop();
-                if let Some(new_captures) = file_path_re.captures(&new_hash) {
-                    let new_hash = &new_captures[1];
-                    if new_hash != hash {
-                        failed_paths.push(String::from(path));
-                    }
-                }
+                let task = super::util::HashTask {
+                    path: String::from(path),
+                    workdir: PathBuf::from(workdir),
+                    opts: Arc::clone(&opts),
+                    cmp: String::from(hash),
+                    result_chan: tx_result.clone(),
+                };
 
-                let metadata = fs::metadata(format!("{}/{}", workdir.to_str().unwrap(), path));
-                if let Ok(metadata) = metadata {
-                    processed_bytes += metadata.len();
-                }
-
-                print_progress(
-                    all_bytes,
-                    processed_bytes,
-                    print_line,
-                    &workdir,
-                    longest_folder,
-                )?;
+                myq.push(task);
             }
         }
     }
 
+    drop(tx_result);
+
+    for path in rx_paths {
+        failed_paths.push(path);
+    }
+
+    updater_handle.join().unwrap();
+
     if failed_paths.is_empty() {
-        print_message(print_line, "checked: OK", &workdir)?;
+        print_message_aligned(print_line, "checked: OK", workdir_str, longest_folder)?;
         Ok(())
     } else {
-        print_message(print_line, "checked: FAILED", &workdir)?;
+        print_message_aligned(print_line, "checked: FAILED", workdir_str, longest_folder)?;
         Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "Some files changed unexpectedly",
@@ -555,25 +615,17 @@ fn count_bytes_from_txt(
 /// * `all_bytes` Number of bytes in this working directory that are listed in _algorithm_sum.txt
 /// * `processed_bytes` Number of already processed bytes
 /// * `line` Number of lines to scroll up before printing the message
-/// * `workdir` PathBuf to the current working directory, which is printed before the message
+/// * `workdir` String containing the current working directory, which is printed before the message
 /// * `longest_folder` Number of characters in the name of the longest folder, determines how many spaces are padded
 fn print_progress(
     all_bytes: u64,
     processed_bytes: u64,
     line: u32,
-    workdir: &PathBuf,
+    workdir: &str,
     longest_folder: usize,
 ) -> Result<(), io::Error> {
     let progress = processed_bytes as f64 / all_bytes as f64;
-    let mut message = String::new();
-
-    let mut i = workdir.to_str().unwrap().len();
-    while i < longest_folder {
-        message = format!("{} ", message);
-        i += 1;
-    }
-
-    message = format!("{} {:03.2}% ", message, progress * 100.0);
+    let mut message = format!("{:05.2}% ", progress * 100.0);
 
     let progress_bar = 60.0 * progress;
     for i in 0..60 {
@@ -584,7 +636,7 @@ fn print_progress(
         }
     }
 
-    print_message(line, &message, workdir)
+    print_message_aligned(line, &message, workdir, longest_folder)
 }
 
 /// Print a message N lines above the current cursor.
@@ -594,15 +646,42 @@ fn print_progress(
 /// # Arguments
 /// * `line` Number of lines to scroll up before printing the message
 /// * `message` String to print
-/// * `workdir` PathBuf to the current working directory, which is printed before the message
-fn print_message(line: u32, message: &str, workdir: &PathBuf) -> Result<(), io::Error> {
+/// * `workdir` String containing the current working directory, which is printed before the message
+fn print_message(line: u32, message: &str, workdir: &str) -> Result<(), io::Error> {
     let stdout = io::stdout();
     let mut handle = stdout.lock();
     handle.write_all(b"\x1b[s")?;
     write!(handle, "\x1b[{}A\x1b[2K", line)?;
-    write!(handle, "{}: {}", workdir.to_str().unwrap(), message)?;
+    write!(handle, "{}: {}", workdir, message)?;
     handle.write_all(b"\x1b[u")?;
     io::stdout().flush()
+}
+
+/// Print a message N lines above the current cursor.
+/// Cursor position is saved and restored after this operation.
+/// The line is cleared before printing.
+/// The message gets padded to the left with spaces in order to align it with
+/// other messages on other lines, using longest_folder as an indicator of needed padding.
+///
+/// # Arguments
+/// * `line` Number of lines to scroll up before printing the message
+/// * `message` String to print
+/// * `workdir` String containing the current working directory, which is printed before the message
+/// * `longest_folder` length of the name of the longest folder in the current workset
+fn print_message_aligned(
+    line: u32,
+    message: &str,
+    workdir: &str,
+    longest_folder: usize,
+) -> Result<(), io::Error> {
+    let mut padding = String::new();
+    let mut i = workdir.len();
+    while i < longest_folder {
+        padding = format!("{} ", padding);
+        i += 1;
+    }
+    let to_print = &format!("{} {}", padding, message);
+    print_message(line, to_print, workdir)
 }
 
 /// Build up a vec containing the paths to directories that were already checked
