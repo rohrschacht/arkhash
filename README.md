@@ -15,7 +15,7 @@ By generating a hashsum when the picture is initially stored on the drive and
 comparing it regularly, this program is able to detect those unwanted changes.
 It can't repair the picture, but it can inform you. You are then able to
 retrieve the picture from a backup, which you should always have when dealing
-with sensible data.
+with sensitive data.
 
 ## Features
 * Supported algorithms: sha1, md5, sha224, sha256, sha384, sha512 (default:
