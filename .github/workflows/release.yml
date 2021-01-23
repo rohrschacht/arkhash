@@ -47,4 +47,4 @@ jobs:
           upload_url: ${{ github.event.release.upload_url }}
           asset_path: ./target/release/arkhash.exe
           asset_name: arkhash.exe
-          asset_content_type: application-octet-stream
+          asset_content_type: application/octet-stream
