@@ -163,7 +163,7 @@ fn verify_test() {
 /// * Verify checksums
 ///
 /// # Expected
-/// * arkhash should return with an exit code signaling failure (TODO)
+/// * arkhash should return with an exit code signaling failure
 /// * output should contain the keywork FAILED
 #[test]
 fn verify_modified_test() {
@@ -208,6 +208,7 @@ fn verify_modified_test() {
         .current_dir("testenvironment")
         .stdout()
         .contains("FAILED")
+        .fails_with(1)
         .unwrap();
 
     teardown();
@@ -374,7 +375,7 @@ fn verify_subdir_test() {
 /// * Verify subdirs for testenvironment
 ///
 /// # Expected
-/// * arkhash should return with an exit code signaling failure (TODO)
+/// * arkhash should return with an exit code signaling failure
 /// * output should contain the keywork FAILED
 /// * 2 files starting with the name to_check should be created
 #[test]
@@ -420,6 +421,7 @@ fn verify_subdir_modified_test() {
         .current_dir("testenvironment")
         .stdout()
         .contains("FAILED")
+        .fails_with(1)
         .unwrap();
 
     let mut to_check_occurences = 0;
