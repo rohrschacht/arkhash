@@ -30,6 +30,21 @@ fn template_test() {
     teardown();
 }
 
+/// Tests the update mode on a changing dataset.
+///
+/// # Steps
+/// * Update checksums for testenvironment
+/// * Count lines in generated database file. Should contain exactly 27 lines.
+/// * Update checksums again
+/// * Count lines again. Should still be 27 lines.
+/// * Add a file to the testenvironment
+/// * Update checksums again
+/// * Count lines again. Should now be 28 lines.
+///
+/// # Expected
+/// * arkhash should return without failure
+/// * number of lines in the file should not increase after the first repeated update
+/// * number of lines should increase after the second repetition
 #[test]
 fn update_test() {
     let _guard = MTX.lock().unwrap();
@@ -109,6 +124,15 @@ fn update_test() {
     teardown();
 }
 
+/// Tests the verification mode on a clean database.
+///
+/// # Steps
+/// * Update checksums for testenvironment
+/// * Verify checksums for testenvironment
+///
+/// # Expected
+/// * arkhash should return without failure
+/// * output should not contain the keyword FAILED
 #[test]
 fn verify_test() {
     let _guard = MTX.lock().unwrap();
@@ -131,6 +155,16 @@ fn verify_test() {
     teardown();
 }
 
+/// Tests the verification mode on an unclean database.
+///
+/// # Steps
+/// * Update checksums for testenvironment
+/// * Modify the database: alter the first checksum
+/// * Verify checksums
+///
+/// # Expected
+/// * arkhash should return with an exit code signaling failure (TODO)
+/// * output should contain the keywork FAILED
 #[test]
 fn verify_modified_test() {
     let _guard = MTX.lock().unwrap();
@@ -179,6 +213,18 @@ fn verify_modified_test() {
     teardown();
 }
 
+/// Tests the update subdir mode on a non-changing dataset.
+///
+/// # Steps
+/// * Update subdirs for testenvironment
+/// * Count number of lines in subdir databases
+/// * Update subdirs again
+/// * Count lines again
+///
+/// # Expected
+/// * arkhash should return without failure
+/// * number of lines for databases in subdir should be 13 and 14
+/// * number of lines should not change after repetition
 #[test]
 fn update_subdir_test() {
     let _guard = MTX.lock().unwrap();
@@ -275,6 +321,16 @@ fn update_subdir_test() {
     teardown();
 }
 
+/// Tests the verification subdir mode on a clean database.
+///
+/// # Steps
+/// * Update subdirs for testenvironment
+/// * Verify subdirs for testenvironment
+///
+/// # Expected
+/// * arkhash should return without failure
+/// * output should not contain the keywork FAILED
+/// * a file called known_good_month_year.txt should be created
 #[test]
 fn verify_subdir_test() {
     let _guard = MTX.lock().unwrap();
@@ -310,6 +366,17 @@ fn verify_subdir_test() {
     teardown();
 }
 
+/// Tests the verification subdir mode on an unclean database.
+///
+/// # Steps
+/// * Update subdirs for testenvironment
+/// * Modify the database: alter the first checksum in database of folder test
+/// * Verify subdirs for testenvironment
+///
+/// # Expected
+/// * arkhash should return with an exit code signaling failure (TODO)
+/// * output should contain the keywork FAILED
+/// * 2 files starting with the name to_check should be created
 #[test]
 fn verify_subdir_modified_test() {
     let _guard = MTX.lock().unwrap();
@@ -371,6 +438,17 @@ fn verify_subdir_modified_test() {
     teardown();
 }
 
+/// Tests the exclusion of a folder listed in the ignore file.
+///
+/// # Steps
+/// * Create a new directory in testenvironment called ignore
+/// * Create an .arkignore file containing 'ignore'
+/// * Update subdirs for testenvironment
+/// * Check if a database file was created for the ignore folder
+///
+/// # Expected
+/// * arkhash should return without failure
+/// * a database file should not be created in the ignore folder
 #[test]
 fn update_subdir_ignore_test() {
     let _guard = MTX.lock().unwrap();
@@ -405,6 +483,9 @@ fn update_subdir_ignore_test() {
     teardown();
 }
 
+/// Sets up the testenvironment for all tests.
+/// Creates the folders `testenvironment`, `testenvironment/test` and `testenvironment/secondsecond`.
+/// Populates both subdirectories with 10 small and 5 medium sized files. Adds another big file to secondsecond.
 fn setup() {
     fs::create_dir("testenvironment").unwrap();
     fs::create_dir("testenvironment/test").unwrap();
@@ -452,11 +533,13 @@ Ut wisi enim ad minim veniam, quis nostrud exerci tation ullamcorper suscipit lo
 Nam liber tempor cum soluta nobis eleifend option congue nihil imperdiet doming id quod mazim placerat facer possim assum. Lorem ipsum dolor sit amet, consectetuer adipiscing elit, sed diam nonummy nibh euismod tincidunt ut laoreet dolore magna aliquam erat volutpat. Ut wisi enim ad minim veniam, quis nostrud exerci tation ullamcorper suscipit lobortis nisl ut aliquip ex ea commodo").unwrap();
 }
 
+/// Destroys the testenvironment folder and all its contents.
 #[cfg(unix)]
 fn teardown() {
     fs::remove_dir_all("testenvironment").unwrap();
 }
 
+/// Destroys the testenvironment folder and all its contents.
 #[cfg(windows)]
 fn teardown() {
     remove_dir_all::remove_dir_all("testenvironment").unwrap();
