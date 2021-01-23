@@ -25,7 +25,10 @@ use super::util::HashError;
 /// # Arguments
 ///
 /// * `opts` An Options object containing information about the program behavior
-pub fn verify_directories(opts: super::util::Options) {
+///
+/// # Returns
+/// The exit code the program should return.
+pub fn verify_directories(opts: super::util::Options) -> i32 {
     let now = chrono::Local::now();
     let known_good_path = format!("known_good_{}_{}.txt", now.month(), now.year());
     let to_check_path = format!("to_check_{}_{}.txt", now.month(), now.year());
@@ -52,18 +55,21 @@ pub fn verify_directories(opts: super::util::Options) {
         };
 
         let opts = Arc::new(opts);
+        let cloned_opts = Arc::clone(&opts);
         let workdir = PathBuf::from(&opts.folder);
         let myq = Arc::clone(&q);
+        let (tx, rx) = channel();
 
         let handle = thread::spawn(move || {
             verify_directory(
                 &workdir,
                 Arc::new(known_good_path),
                 Arc::new(to_check_path),
-                opts,
+                cloned_opts,
                 1,
                 0,
                 myq,
+                tx,
             );
         });
 
@@ -81,6 +87,16 @@ pub fn verify_directories(opts: super::util::Options) {
         for handle in worker_handles {
             handle.join().unwrap();
         }
+
+        let mut exit_code = 0;
+
+        for code in rx {
+            if code != 0 {
+                exit_code = code;
+            }
+        }
+
+        exit_code
     } else {
         // iterate over subdirs and spawn verify_directory threads
 
@@ -154,13 +170,16 @@ fn gather_directories_to_process(
 /// * `to_check_path` Path to the text file containing all checked and bad directories
 /// * `dirs_to_process` Vector of directory paths that have to be checked
 /// * `longest_folder` Number of characters in the name of the longest folder
+///
+/// # Returns
+/// The exit code the program should return.
 fn execute_threads_subdir(
     opts: super::util::Options,
     known_good_path: String,
     to_check_path: String,
     dirs_to_process: Vec<PathBuf>,
     longest_folder: usize,
-) {
+) -> i32 {
     let mut producer_handles = Vec::new();
     let mut worker_handles = Vec::new();
     let mut print_line = 1;
@@ -173,12 +192,14 @@ fn execute_threads_subdir(
         0 => num_cpus::get(),
         _ => opts.num_threads,
     };
+    let (tx, rx) = channel();
 
     for entry in dirs_to_process {
         let opts = Arc::clone(&opts);
         let myq = Arc::clone(&q);
         let known_good_path = Arc::clone(&known_good_path);
         let to_check_path = Arc::clone(&to_check_path);
+        let tx = tx.clone();
 
         let handle = thread::spawn(move || {
             verify_directory(
@@ -189,6 +210,7 @@ fn execute_threads_subdir(
                 print_line,
                 longest_folder,
                 myq,
+                tx,
             );
         });
 
@@ -213,6 +235,17 @@ fn execute_threads_subdir(
     for handle in worker_handles {
         handle.join().unwrap();
     }
+
+    let mut exit_code = 0;
+
+    drop(tx);
+    for code in rx {
+        if code != 0 {
+            exit_code = code;
+        }
+    }
+
+    exit_code
 }
 
 /// Verifies the integrity of a directory
@@ -225,6 +258,7 @@ fn execute_threads_subdir(
 /// * `opts` An Options object containing information about the program behavior
 /// * `print_line` The line to print progressbar and messages to. Only used in loglevel progress.
 /// * `longest_folder` Number of characters in the name of the longest folder, determines how many spaces are padded
+/// * `tx` Sender for sending the supposed exit code for the program.
 fn verify_directory(
     workdir: &PathBuf,
     known_good_path: Arc<String>,
@@ -233,6 +267,7 @@ fn verify_directory(
     print_line: u32,
     longest_folder: usize,
     myq: Arc<Injector<super::util::HashTask>>,
+    tx: Sender<i32>,
 ) {
     if opts.loglevel_info() {
         let now: DateTime<chrono::Local> = chrono::Local::now();
@@ -261,9 +296,11 @@ fn verify_directory(
     if success.is_ok() {
         // every file from _algorithm_sum.txt was correct
         inform_directory_good(&workdir, known_good_path, opts);
+        tx.send(0).unwrap();
     } else {
         // some files from _algorithm_sum.txt were INCORRECT
         inform_directory_bad(&workdir, to_check_path, opts, &failed_paths);
+        tx.send(1).unwrap();
     }
 }
 

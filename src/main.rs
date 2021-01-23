@@ -57,7 +57,7 @@ Arguments:
             update::update_directories(opts);
         }
         util::Mode::Verify => {
-            verify::verify_directories(opts);
+            std::process::exit(verify::verify_directories(opts));
         }
     }
 }
