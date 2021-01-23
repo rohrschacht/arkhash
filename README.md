@@ -1,5 +1,8 @@
 # arkhash
 
+[![forthebadge](https://forthebadge.com/images/badges/built-with-love.svg)](https://forthebadge.com) [![forthebadge](https://forthebadge.com/images/badges/made-with-rust.svg)](https://forthebadge.com) [![forthebadge](https://forthebadge.com/images/badges/open-source.svg)](https://forthebadge.com) ![Rust](https://github.com/Rohrschacht/arkhash/workflows/Rust/badge.svg)
+
+
 ## About
 This program was designed based on the need of ensuring data integrity of
 non-changing, archived data.
