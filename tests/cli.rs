@@ -1,11 +1,13 @@
 extern crate assert_cli;
 extern crate regex;
+extern crate chrono;
 
 #[cfg(windows)]
 extern crate remove_dir_all;
 
 use assert_cli::*;
 use regex::Regex;
+use chrono::{DateTime, Datelike};
 
 use std::fs;
 use std::io::prelude::*;
@@ -483,6 +485,103 @@ fn update_subdir_ignore_test() {
     }
 
     assert_ne!(hashsum_file, true);
+
+    teardown();
+}
+
+/// Tests that the verification is not conducted again when the subdirectories are already known good.
+///
+/// # Steps
+/// * Update subdirs for testenvironment
+/// * Verify subdirs for testenvironment
+/// * Verify subdirs for testenvironment again
+///
+/// # Expected
+/// * arkhash should return without failure
+/// * a file called known_good_month_year.txt should be created, containing exactly 2 lines,
+///   irregardless of how often arkhash is executed
+#[test]
+fn known_good_no_repetition_test() {
+    let _guard = MTX.lock().unwrap();
+
+    setup();
+
+    // test
+    Assert::main_binary()
+        .with_args(&["-us"])
+        .current_dir("testenvironment")
+        .unwrap();
+
+    for _ in 0..4 {
+        Assert::main_binary()
+            .with_args(&["-vs"])
+            .current_dir("testenvironment")
+            .unwrap();
+
+        let re = Regex::new(r"known_good.*").unwrap();
+        for entry in fs::read_dir("testenvironment").unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_file() {
+                if re.is_match(path.to_str().unwrap()) {
+                    let known_good_file = fs::File::open(path);
+                    if let Ok(known_good_file) = known_good_file {
+                        let mut i = 0;
+                        for _ in BufReader::new(known_good_file).lines() {
+                            i += 1;
+                        }
+
+                        if i != 2 {
+                            teardown();
+                            panic!(
+                                "arkhash produced the wrong number of entries in the known_good file. expected: 2, given: {}",
+                                i
+                            );
+                        }
+                    } else {
+                        teardown();
+                        panic!("arkhash did not create the known_good file!");
+                    }
+                }
+            }
+        }
+    }
+
+    teardown();
+}
+
+/// Tests that a directory which is recently marked as known bad is not analyzed again.
+///
+/// # Steps
+/// * Update subdirs for testenvironment
+/// * Create a file to_check_month_year.txt which contains secondsecond
+/// * Verify subdirs for testenvironment
+///
+/// # Expected
+/// * arkhash should fail with exit code 2
+/// * output should contain information that a directory was already in a known bad state
+#[test]
+fn to_check_dirs_skipped_test() {
+    let _guard = MTX.lock().unwrap();
+
+    setup();
+
+    // test
+    Assert::main_binary()
+        .with_args(&["-us"])
+        .current_dir("testenvironment")
+        .unwrap();
+
+    let now: DateTime<chrono::Local> = chrono::Local::now();
+    let mut to_check_file = fs::File::create(format!("testenvironment/to_check_{}_{}.txt", now.month(), now.year())).unwrap();
+    to_check_file.write("./secondsecond".as_bytes()).unwrap();
+
+    Assert::main_binary()
+        .with_args(&["-vs"])
+        .current_dir("testenvironment")
+        .stdout()
+        .contains("Directory ./secondsecond already marked known bad")
+        .fails_with(2)
+        .unwrap();
 
     teardown();
 }

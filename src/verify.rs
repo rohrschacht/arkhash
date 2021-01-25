@@ -33,12 +33,6 @@ pub fn verify_directories(opts: super::util::Options) -> i32 {
     let known_good_path = format!("known_good_{}_{}.txt", now.month(), now.year());
     let to_check_path = format!("to_check_{}_{}.txt", now.month(), now.year());
 
-    // read every line from known_good_path and to_check_path to vec
-    let already_checked = read_already_checked(&known_good_path, &to_check_path);
-    if opts.loglevel_debug() {
-        println!("Already checked subdirs: {:?}", already_checked);
-    }
-
     if !opts.subdir_mode {
         // execute in directory
 
@@ -99,38 +93,54 @@ pub fn verify_directories(opts: super::util::Options) -> i32 {
         exit_code
     } else {
         // iterate over subdirs and spawn verify_directory threads
-
-        let (dirs_to_process, longest_folder) =
-            gather_directories_to_process(&opts, &already_checked);
-
-        if opts.loglevel_progress() {
-            super::util::terminal_noecho();
-            for _ in 0..dirs_to_process.len() {
-                println!();
-            }
-        }
-
         execute_threads_subdir(
             opts,
             known_good_path,
             to_check_path,
-            dirs_to_process,
-            longest_folder,
         )
     }
 }
 
 /// Reads all directories in the working directory and compares them with already checked directories.
 /// Ignores directories that don't contain an _algorithm_sum.txt file.
+/// Logs information about known good and known bad directories in info and progress levels.
 /// Returns unchecked directories and the number of characters in the name of the directory with the longest name.
+/// Also returns a flag indicating if there exist known bad directories.
 ///
 /// # Arguments
 /// * `opts` Options object containing the working directory
-/// * `already_checked` Vector of already checked directory paths
+/// * `known_good_path` Path to the text file containing all checked and good directories
+/// * `to_check_path` Path to the text file containing all checked and bad directories
 fn gather_directories_to_process(
     opts: &super::util::Options,
-    already_checked: &[PathBuf],
-) -> (Vec<PathBuf>, usize) {
+    known_good_path: &String,
+    to_check_path: &String,
+) -> (Vec<PathBuf>, usize, bool) {
+    // read every line from known_good_path and to_check_path to vec
+    let already_checked_good = super::util::read_paths_from_file(&known_good_path);
+    let already_checked_bad = super::util::read_paths_from_file(&to_check_path);
+    if opts.loglevel_debug() {
+        println!("Already checked subdirs: known good: {:?}, known bad: {:?}", already_checked_good, already_checked_bad);
+    }
+
+    if opts.loglevel_info() {
+        let now: DateTime<chrono::Local> = chrono::Local::now();
+        for dir in already_checked_good.iter().as_ref() {
+            println!(
+                "[{}] Directory {} already marked known good",
+                now,
+                dir.to_str().unwrap()
+            );
+        }
+        for dir in already_checked_bad.iter().as_ref() {
+            println!(
+                "[{}] Directory {} already marked known bad",
+                now,
+                dir.to_str().unwrap()
+            );
+        }
+    }
+
     let dir_entries = fs::read_dir(&opts.folder).unwrap();
     let mut dirs_to_process = Vec::new();
     let mut longest_folder = 0;
@@ -139,26 +149,39 @@ fn gather_directories_to_process(
         let entry = entry.unwrap();
         let metadata = entry.metadata().unwrap();
 
-        if metadata.is_dir() && !already_checked.contains(&entry.path()) {
-            let sum_txt_path = fs::metadata(format!(
-                "{}/{}sum.txt",
-                entry.path().to_str().unwrap(),
-                &opts.algorithm
-            ));
-            if let Ok(path) = sum_txt_path {
-                if path.is_file() {
-                    dirs_to_process.push(entry.path());
-
-                    let len = entry.path().to_str().unwrap().len();
-                    if len > longest_folder {
-                        longest_folder = len;
+        if metadata.is_dir() {
+            if !(already_checked_good.contains(&entry.path()) || already_checked_bad.contains(&entry.path())) {
+                let sum_txt_path = fs::metadata(format!(
+                    "{}/{}sum.txt",
+                    entry.path().to_str().unwrap(),
+                    &opts.algorithm
+                ));
+                if let Ok(path) = sum_txt_path {
+                    if path.is_file() {
+                        dirs_to_process.push(entry.path());
                     }
                 }
             }
+
+            let len = entry.path().to_str().unwrap().len();
+            if len > longest_folder {
+                longest_folder = len;
+            }
+        }
+    }
+    
+    if opts.loglevel_progress() {
+        for dir in already_checked_good {
+            println!();
+            print_message_aligned(1, "already known good", dir.to_str().unwrap(), longest_folder).unwrap();
+        }
+        for dir in already_checked_bad.iter().by_ref() {
+            println!();
+            print_message_aligned(1, "already known BAD", dir.to_str().unwrap(), longest_folder).unwrap();
         }
     }
 
-    (dirs_to_process, longest_folder)
+    (dirs_to_process, longest_folder, already_checked_bad.is_empty())
 }
 
 /// Starts a thread for every directory in dirs_to_process and launches them all at once.
@@ -168,8 +191,6 @@ fn gather_directories_to_process(
 /// * `opts` Options object
 /// * `known_good_path` Path to the text file containing all checked and good directories
 /// * `to_check_path` Path to the text file containing all checked and bad directories
-/// * `dirs_to_process` Vector of directory paths that have to be checked
-/// * `longest_folder` Number of characters in the name of the longest folder
 ///
 /// # Returns
 /// The exit code the program should return.
@@ -177,9 +198,17 @@ fn execute_threads_subdir(
     opts: super::util::Options,
     known_good_path: String,
     to_check_path: String,
-    dirs_to_process: Vec<PathBuf>,
-    longest_folder: usize,
 ) -> i32 {
+    let (dirs_to_process, longest_folder, known_bad_empty) =
+        gather_directories_to_process(&opts, &known_good_path, &to_check_path);
+
+    if opts.loglevel_progress() {
+        super::util::terminal_noecho();
+        for _ in 0..dirs_to_process.len() {
+            println!();
+        }
+    }
+
     let mut producer_handles = Vec::new();
     let mut worker_handles = Vec::new();
     let mut print_line = 1;
@@ -193,6 +222,7 @@ fn execute_threads_subdir(
         _ => opts.num_threads,
     };
     let (tx, rx) = channel();
+    let mut exit_code = if known_bad_empty { 0 } else { 2 };
 
     for entry in dirs_to_process {
         let opts = Arc::clone(&opts);
@@ -235,8 +265,6 @@ fn execute_threads_subdir(
     for handle in worker_handles {
         handle.join().unwrap();
     }
-
-    let mut exit_code = 0;
 
     drop(tx);
     for code in rx {
@@ -719,19 +747,4 @@ fn print_message_aligned(
     }
     let to_print = &format!("{} {}", padding, message);
     print_message(line, to_print, workdir)
-}
-
-/// Build up a vec containing the paths to directories that were already checked
-///
-/// # Arguments
-///
-/// * `known_good_path` Path to the file containing directories that are known to be good
-/// * `to_check_path` Path to the file containing directories that are known to be bad
-fn read_already_checked(known_good_path: &str, to_check_path: &str) -> Vec<PathBuf> {
-    let mut already_checked = Vec::new();
-
-    already_checked.append(&mut super::util::read_paths_from_file(known_good_path));
-    already_checked.append(&mut super::util::read_paths_from_file(to_check_path));
-
-    already_checked
 }
