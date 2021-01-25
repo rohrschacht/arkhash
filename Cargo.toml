@@ -19,7 +19,7 @@ termios = "0.3"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["processenv", "winbase", "consoleapi", "minwindef", "wincon"] }
-remove_dir_all = "0.6"
+remove_dir_all = "0.5"
 
 [dev-dependencies]
 assert_cli = "0.6"
