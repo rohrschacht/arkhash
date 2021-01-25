@@ -1,25 +1,25 @@
 [package]
 name = "arkhash"
-version = "1.1.0"
+version = "1.2.0"
 authors = ["Tobias Petrich <tobias.petrich@campus.tu-berlin.de>"]
 
 [dependencies]
 regex = "1"
 chrono = "0.4"
-digest = "0.8.1"
-sha-1 = "0.8.1"
-md-5 = "0.8.0"
-sha2 = "0.8.0"
-hex = "0.3.2"
-crossbeam-deque = "0.7.1"
-num_cpus = "1.10.1"
+digest = "0.8"
+sha-1 = "0.8"
+md-5 = "0.8"
+sha2 = "0.8"
+hex = "0.4"
+crossbeam-deque = "0.8"
+num_cpus = "1"
 
 [target.'cfg(unix)'.dependencies]
 termios = "0.3"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["processenv", "winbase", "consoleapi", "minwindef", "wincon"] }
-remove_dir_all = "0.5.2"
+remove_dir_all = "0.6"
 
 [dev-dependencies]
 assert_cli = "0.6"
