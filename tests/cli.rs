@@ -468,6 +468,8 @@ fn update_subdir_ignore_test() {
     Assert::main_binary()
         .with_args(&["-us"])
         .current_dir("testenvironment")
+        .stdout()
+        .contains("Ignoring Directory ./ignore")
         .unwrap();
 
     let mut hashsum_file = false;

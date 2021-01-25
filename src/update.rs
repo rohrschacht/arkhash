@@ -73,6 +73,17 @@ fn gather_directories_to_process(opts: &super::util::Options) -> Vec<PathBuf> {
         println!("Dirs to ignore: {:?}", to_ignore);
     }
 
+    if opts.loglevel_info() && !to_ignore.is_empty() {
+        let now: DateTime<chrono::Local> = chrono::Local::now();
+        for ignored_dir in to_ignore.iter().by_ref() {
+            println!(
+                "[{}] Ignoring Directory {}",
+                now,
+                ignored_dir.to_str().unwrap()
+            );
+        }
+    }
+
     let mut dirs_to_process = Vec::new();
     for entry in dir_entries {
         let entry = entry.unwrap();
