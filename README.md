@@ -1,6 +1,6 @@
 # arkhash
 
-[![forthebadge](https://forthebadge.com/images/badges/built-with-love.svg)](https://forthebadge.com) [![forthebadge](https://forthebadge.com/images/badges/made-with-rust.svg)](https://forthebadge.com) [![forthebadge](https://forthebadge.com/images/badges/open-source.svg)](https://forthebadge.com) ![Rust](https://github.com/Rohrschacht/arkhash/workflows/Rust/badge.svg)
+[![forthebadge](https://forthebadge.com/images/badges/built-with-love.svg)](https://forthebadge.com) [![forthebadge](https://forthebadge.com/images/badges/made-with-rust.svg)](https://forthebadge.com) [![forthebadge](https://forthebadge.com/images/badges/open-source.svg)](https://forthebadge.com) ![GitHub License](https://img.shields.io/github/license/Rohrschacht/arkhash?style=for-the-badge) ![GitHub Workflow Status](https://img.shields.io/github/workflow/status/Rohrschacht/arkhash/Rust?style=for-the-badge) ![GitHub release (latest by SemVer)](https://img.shields.io/github/downloads/Rohrschacht/arkhash/latest/total?sort=semver&style=for-the-badge)
 
 
 ## About
